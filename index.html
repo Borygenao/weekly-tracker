@@ -612,8 +612,7 @@ function initAIStatus() {
 
 // ── Claude API ─────────────────────────────────────────────────
 async function claudeCall(prompt, maxTokens = 300) {
-  const proxyUrl = (localStorage.getItem('wtt_proxy') || '').replace(/\/+$/, '');
-  if (!proxyUrl) throw new Error('No proxy URL set. Open ⚙ Settings and add your Render URL.');
+  const proxyUrl = localStorage.getItem('wtt_proxy') || 'https://wtt-proxy.onrender.com';
   const res = await fetch(proxyUrl + '/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1521,7 +1520,7 @@ function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 // ── Google Sheets Sync ────────────────────────────────────────
 // SETUP: Replace with your OAuth Client ID from Google Cloud Console
 // Guide: See SETUP.md included in this zip
-const GOOGLE_CLIENT_ID = localStorage.getItem('wtt_gclient') || '';
+const GOOGLE_CLIENT_ID = localStorage.getItem('wtt_gclient') || '515252740980-j0v2em58m97e9put88p550o1kdlo492p.apps.googleusercontent.com';
 const SHEET_NAME = 'Weekly Tracker Task Database';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
@@ -1868,8 +1867,14 @@ cleanOldMonthTasks();
 window.addEventListener('load', () => {
   setTimeout(initGoogleSync, 1000);
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
+  // Ping Render to wake it up before user needs AI
+  fetch('https://wtt-proxy.onrender.com/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
+  }).catch(() => {});
 });
 </script>
 </body>

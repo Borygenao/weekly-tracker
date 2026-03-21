@@ -1012,7 +1012,7 @@ function toggleTask(id) {
   } else {
     t.done = false; t.blocked = false; t.completedAt = null;
   }
-  // Update UI instantly, defer save to next frame so tap feels snappy
+  t.updatedAt = Date.now();
   render();
   requestAnimationFrame(() => save());
 }
@@ -1104,13 +1104,13 @@ async function saveModal() {
     const oldPriority = t.priority;
     t.notes = document.getElementById('notesArea').value.trim();
     t.scheduledDate = pendingScheduleDate;
-    t.priority = pendingPriority; // always use manually selected priority
+    t.priority = pendingPriority;
+    t.updatedAt = Date.now(); // always stamp so other devices know this is newer
     save(); render();
-    // Only re-detect via AI if notes changed AND user didn't manually change priority
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
       const p = await detectPriority(combined, t.category);
-      if (p) { t.priority = p; save(); render(); }
+      if (p) { t.priority = p; t.updatedAt = Date.now(); save(); render(); }
     }
   }
   closeModal();
@@ -1605,19 +1605,35 @@ async function mergeWithSheet() {
     updatedAt: parseInt(r[10]) || 0
   }));
 
-  // Merge: for each task, keep whichever version was updated more recently
+  // Merge: sheet wins unless local is strictly newer
+  // This ensures edits made on other devices always come through
   const merged = new Map();
+
+  // Start with sheet as source of truth
   for (const t of sheetTasks) merged.set(t.id, t);
+
+  // Only override with local if local was updated MORE RECENTLY than sheet
   for (const t of tasks) {
-    const existing = merged.get(t.id);
-    if (!existing || (t.updatedAt || t.createdAt) >= (existing.updatedAt || existing.createdAt)) {
+    const sheetVersion = merged.get(t.id);
+    if (!sheetVersion) {
+      // Task only exists locally — add it
       merged.set(t.id, { ...t, updatedAt: t.updatedAt || t.createdAt });
+    } else {
+      const localTime = t.updatedAt || t.createdAt || 0;
+      const sheetTime = sheetVersion.updatedAt || sheetVersion.createdAt || 0;
+      if (localTime > sheetTime) {
+        // Local is strictly newer — use local
+        merged.set(t.id, { ...t, updatedAt: localTime });
+      }
+      // Otherwise sheet version wins — already in map
     }
   }
 
   tasks = Array.from(merged.values()).sort((a,b) => b.createdAt - a.createdAt);
-  save(); render();
-  // Push merged result back to sheet
+  // Save locally without triggering a sync (would overwrite sheet with stale data)
+  localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+  render();
+  // Now push the correctly merged result to sheet once
   await pushAllTasksToSheet();
 }
 
@@ -1667,6 +1683,7 @@ async function initGoogleSync() {
   renderSyncSettings();
   if (isTokenValid() && sheetId) {
     updateSyncUI('syncing', '');
+    // Always pull from sheet on load — sheet is source of truth
     await mergeWithSheet();
     updateSyncUI('on', '');
     renderSyncSettings();

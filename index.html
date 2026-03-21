@@ -270,9 +270,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .notes-section { display:flex; flex-direction:column; gap:8px; }
 .notes-header { display:flex; align-items:center; justify-content:space-between; }
 .notes-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1.5px; }
-.voice-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:8px 12px; border-radius:99px; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .2s; min-height:36px; }
-.voice-btn.recording { border-color:#ff5c5c; color:#ff5c5c; animation:pulse-border 1s infinite; }
-@keyframes pulse-border { 0%,100%{box-shadow:0 0 0 0 rgba(255,92,92,.3)}50%{box-shadow:0 0 0 4px rgba(255,92,92,.1)} }
+50%{box-shadow:0 0 0 4px rgba(255,92,92,.1)} }
 .notes-hint { font-family:'Space Mono',monospace; font-size:10px; color:#2a5a2a; background:rgba(76,175,125,.06); border:1px solid rgba(76,175,125,.15); border-radius:8px; padding:10px 12px; line-height:1.6; }
 .notes-area { width:100%; background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:'Syne',sans-serif; font-size:15px; padding:14px; resize:none; height:100px; outline:none; transition:border-color .2s; line-height:1.6; }
 .notes-area::placeholder { color:var(--muted); }
@@ -510,7 +508,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <div class="notes-section">
       <div class="notes-header">
         <div class="notes-label">Notes</div>
-        <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()">🎙 Voice</button>
       </div>
       <textarea class="notes-area" id="notesArea" placeholder="Type or voice your notes — what you did, blockers, next steps..."></textarea>
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Clean up notes</button>
@@ -529,8 +526,7 @@ let tasks = JSON.parse(localStorage.getItem('wtt_tasks') || '[]');
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
 let settingsOpen = false, reportOpen = false;
-let isRecordingVoice = false;
-let mediaRec = null, reportText = '';
+let reportText = '';
 let pendingScheduleDate = null;
 let pendingPriority = 'medium';
 
@@ -972,74 +968,6 @@ Rules: professional tone, no emojis, concrete, one sentence per bullet.`, 600);
   }
 }
 
-// ── Voice ──────────────────────────────────────────────────────
-function getSR() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { alert('Voice not supported here. Try Chrome or Safari.'); return null; }
-  const r = new SR(); r.continuous = false; r.interimResults = false; r.lang = 'en-US'; return r;
-}
-
-function toggleVoice() {
-  const btn = document.getElementById('voiceBtn');
-  const area = document.getElementById('notesArea');
-
-  // If already recording, stop
-  if (isRecordingVoice) {
-    if (mediaRec) { try { mediaRec.stop(); } catch(e) {} }
-    isRecordingVoice = false;
-    btn.classList.remove('recording');
-    btn.textContent = '🎙 Voice';
-    return;
-  }
-
-  // Check support
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    alert('Voice input not supported in this browser.\n\nTip: Use the 🎙 key on your iPhone keyboard instead — it works in any text field!');
-    return;
-  }
-
-  try {
-    const r = new SR();
-    r.continuous = false;
-    r.interimResults = false;
-    r.lang = 'en-US';
-    r.maxAlternatives = 1;
-
-    r.onstart = () => {
-      isRecordingVoice = true;
-      mediaRec = r;
-      btn.classList.add('recording');
-      btn.textContent = '⏹ Stop';
-    };
-
-    r.onresult = (e) => {
-      const transcript = e.results[0][0].transcript;
-      area.value = area.value ? area.value + ' ' + transcript : transcript;
-    };
-
-    r.onend = () => {
-      isRecordingVoice = false;
-      mediaRec = null;
-      btn.classList.remove('recording');
-      btn.textContent = '🎙 Voice';
-    };
-
-    r.onerror = (e) => {
-      isRecordingVoice = false;
-      mediaRec = null;
-      btn.classList.remove('recording');
-      btn.textContent = '🎙 Voice';
-      if (e.error === 'not-allowed') {
-        alert('Microphone access denied.\nGo to Settings → Safari → Microphone and allow access.');
-      }
-    };
-
-    r.start();
-  } catch(e) {
-    alert('Could not start voice input: ' + e.message);
-  }
-}
 
 function toggleContextVoice() {} // removed
 

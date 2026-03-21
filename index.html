@@ -10,7 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="Weekly.">
 <meta name="theme-color" content="#0d0d0d">
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
-<link rel="manifest" href="/manifest.json">
+<link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://apis.google.com/js/api.js" async></script>
@@ -1452,7 +1452,33 @@ let isSyncing = false;
 let syncDebounceTimer = null;
 
 function isTokenValid() {
-  return gAccessToken && Date.now() < gTokenExpiry - 60000;
+  if (!gAccessToken) return false;
+  // Use 5 min buffer instead of 1 min — tokens often expire earlier than reported
+  return Date.now() < gTokenExpiry - 300000;
+}
+
+async function getValidToken() {
+  if (isTokenValid()) return true;
+  // Token expired — trigger silent re-auth
+  return new Promise((resolve) => {
+    if (typeof google === 'undefined' || !google.accounts) { resolve(false); return; }
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: SCOPES,
+        prompt: '', // silent — no popup
+        callback: (resp) => {
+          if (resp.error) { resolve(false); return; }
+          gAccessToken = resp.access_token;
+          gTokenExpiry = Date.now() + (resp.expires_in * 1000);
+          localStorage.setItem('wtt_gtoken', gAccessToken);
+          localStorage.setItem('wtt_gexpiry', String(gTokenExpiry));
+          resolve(true);
+        }
+      });
+      client.requestAccessToken({ prompt: '' });
+    } catch(e) { resolve(false); }
+  });
 }
 
 function googleSignIn() {
@@ -1499,12 +1525,26 @@ function googleSignOut() {
 }
 
 async function sheetsRequest(method, path, body) {
-  if (!isTokenValid()) { googleSignOut(); return null; }
+  // Ensure we have a valid token — refresh silently if expired
+  const valid = isTokenValid() || await getValidToken();
+  if (!valid) { googleSignOut(); return null; }
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
     method,
     headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined
   });
+  if (res.status === 401) {
+    // Token rejected — try refresh once
+    const refreshed = await getValidToken();
+    if (!refreshed) { googleSignOut(); return null; }
+    const retry = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
+      method,
+      headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!retry.ok) return null;
+    return retry.json();
+  }
   if (!res.ok) {
     const err = await res.text();
     console.error('Sheets API error:', res.status, err);

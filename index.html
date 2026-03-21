@@ -377,13 +377,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="sync-settings-row" id="syncSettingsRow">
           <!-- populated by JS -->
         </div>
-        <div style="margin-top:10px;">
-          <div class="settings-hint" style="margin-bottom:6px">Client ID (one-time setup)</div>
-          <div class="settings-row">
-            <input class="api-key-input" id="clientIdInput" type="text" placeholder="xxxx.apps.googleusercontent.com">
-            <button class="btn-sm green" onclick="saveClientId()">Save</button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -600,8 +593,7 @@ function toggleSettings() {
   if (settingsOpen) {
     const pi = document.getElementById('proxyUrlInput');
     if (pi) pi.value = localStorage.getItem('wtt_proxy') || '';
-    const ci = document.getElementById('clientIdInput');
-    if (ci) ci.value = localStorage.getItem('wtt_gclient') || '';
+
     renderSyncSettings();
   }
 }
@@ -1725,12 +1717,7 @@ function saveProxyUrl() {
   if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => btn.textContent = 'Save', 1500); }
 }
 
-function saveClientId() {
-  const val = document.getElementById('clientIdInput').value.trim();
-  if (!val) return;
-  localStorage.setItem('wtt_gclient', val);
-  location.reload();
-}
+
 
 // ── Monthly Calendar ──────────────────────────────────────────
 let calOpen = false;

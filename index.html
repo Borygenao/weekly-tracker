@@ -368,7 +368,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <div class="panel-inner">
       <div class="panel-title">// settings</div>
       <div>
-        <div class="settings-label">Gemini AI</div>
+        <div class="settings-label">Claude AI</div>
         <div class="ai-status"><div class="ai-status-dot on" id="aiStatusDot"></div><span id="aiStatusText">Connected via server</span></div>
         <div class="settings-hint" style="margin-top:4px">Your API key is stored securely on the server.</div>
       </div>
@@ -617,7 +617,7 @@ async function claudeCall(prompt, maxTokens = 300) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gemini',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }]
     })
@@ -1535,11 +1535,6 @@ function isTokenValid() {
 }
 
 function googleSignIn() {
-  if (!GOOGLE_CLIENT_ID) {
-    alert('Please set up your Google Client ID first.\nOpen Settings and paste your Client ID.');
-    toggleSettings();
-    return;
-  }
   const client = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: SCOPES,

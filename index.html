@@ -315,11 +315,21 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .cal-legend-dot.done { background:var(--low); }
 .cal-legend-dot.pending { background:var(--muted2); }
 
+/* ── Pull to refresh ── */
+.ptr-indicator { position:fixed; top:0; left:0; right:0; display:flex; align-items:center; justify-content:center; height:0; overflow:hidden; background:var(--surface); font-family:'Space Mono',monospace; font-size:10px; color:var(--accent); z-index:600; transition:height .15s; gap:6px; }
+.ptr-indicator.visible { height:44px; }
+.ptr-spinner { width:14px; height:14px; border:2px solid rgba(200,241,53,.2); border-top-color:var(--accent); border-radius:50%; animation:ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform:rotate(360deg); } }
+
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 </style>
 </head>
 <body>
+<div class="ptr-indicator" id="ptrIndicator">
+  <div class="ptr-spinner"></div>
+  <span>Refreshing...</span>
+</div>
 <div class="container">
 
   <!-- Header -->
@@ -1630,6 +1640,9 @@ async function mergeWithSheet() {
   const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:K?majorDimension=ROWS`);
   const rows = data?.values || [];
 
+  console.log('DEBUG sheet rows:', rows.length);
+  rows.forEach((r,i) => console.log(`DEBUG row ${i}: id=${r[0]} text=${r[1]?.substring(0,20)} notes="${r[7]}" updatedAt=${r[10]}`));
+
   // Parse sheet tasks
   const sheetTasks = rows.filter(r => r[0]).map(r => ({
     id: parseInt(r[0]) || Date.now(),
@@ -1645,35 +1658,30 @@ async function mergeWithSheet() {
     updatedAt: parseInt(r[10]) || 0
   }));
 
+  console.log('DEBUG local tasks:', tasks.length);
+  tasks.forEach(t => console.log(`DEBUG local: id=${t.id} notes="${t.notes}" updatedAt=${t.updatedAt}`));
+
   // Merge: sheet wins unless local is strictly newer
-  // This ensures edits made on other devices always come through
   const merged = new Map();
-
-  // Start with sheet as source of truth
   for (const t of sheetTasks) merged.set(t.id, t);
-
-  // Only override with local if local was updated MORE RECENTLY than sheet
   for (const t of tasks) {
     const sheetVersion = merged.get(t.id);
     if (!sheetVersion) {
-      // Task only exists locally — add it
       merged.set(t.id, { ...t, updatedAt: t.updatedAt || t.createdAt });
     } else {
       const localTime = t.updatedAt || t.createdAt || 0;
       const sheetTime = sheetVersion.updatedAt || sheetVersion.createdAt || 0;
+      console.log(`DEBUG merge id=${t.id}: localTime=${localTime} sheetTime=${sheetTime} sheetNotes="${sheetVersion.notes}" localNotes="${t.notes}"`);
       if (localTime > sheetTime) {
-        // Local is strictly newer — use local
         merged.set(t.id, { ...t, updatedAt: localTime });
       }
-      // Otherwise sheet version wins — already in map
     }
   }
 
   tasks = Array.from(merged.values()).sort((a,b) => b.createdAt - a.createdAt);
-  // Save locally without triggering a sync (would overwrite sheet with stale data)
+  console.log('DEBUG after merge:', tasks.map(t => `id=${t.id} notes="${t.notes}"`));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
-  // Now push the correctly merged result to sheet once
   await pushAllTasksToSheet();
 }
 
@@ -1886,12 +1894,54 @@ window.addEventListener('load', () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
-  // Ping Render to wake it up before user needs AI
   fetch('https://wtt-proxy.onrender.com/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
   }).catch(() => {});
+});
+
+// ── Auto-refresh when app comes back to foreground ─────────────
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    render(); // re-render so day groupings update (today/tomorrow etc.)
+    if (sheetId && isTokenValid()) {
+      mergeWithSheet().catch(() => {});
+    }
+  }
+});
+
+// ── Pull to refresh ────────────────────────────────────────────
+let ptrStartY = 0;
+let ptrActive = false;
+const PTR_THRESHOLD = 80;
+
+document.addEventListener('touchstart', e => {
+  if (window.scrollY === 0 && !ptrActive) {
+    ptrStartY = e.touches[0].clientY;
+  }
+}, { passive: true });
+
+document.addEventListener('touchmove', e => {
+  if (ptrStartY === 0) return;
+  const dy = e.touches[0].clientY - ptrStartY;
+  if (dy > PTR_THRESHOLD && window.scrollY === 0) {
+    ptrActive = true;
+    document.getElementById('ptrIndicator').classList.add('visible');
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', async () => {
+  if (!ptrActive) { ptrStartY = 0; return; }
+  ptrActive = false;
+  ptrStartY = 0;
+  render();
+  if (sheetId && isTokenValid()) {
+    try { await mergeWithSheet(); } catch(e) {}
+  }
+  setTimeout(() => {
+    document.getElementById('ptrIndicator').classList.remove('visible');
+  }, 600);
 });
 </script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">

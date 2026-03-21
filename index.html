@@ -11,7 +11,7 @@
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<script src="https://accounts.google.com/gsi/client" async></script>
+<script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://apis.google.com/js/api.js" async></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
 <style>
@@ -1514,7 +1514,7 @@ function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 // Guide: See SETUP.md included in this zip
 const GOOGLE_CLIENT_ID = localStorage.getItem('wtt_gclient') || '515252740980-j0v2em58m97e9put88p550o1kdlo492p.apps.googleusercontent.com';
 const SHEET_NAME = 'Weekly Tracker Task Database';
-const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive';
 
 let gAccessToken = localStorage.getItem('wtt_gtoken') || null;
 let gTokenExpiry = parseInt(localStorage.getItem('wtt_gexpiry') || '0');
@@ -1527,20 +1527,37 @@ function isTokenValid() {
 }
 
 function googleSignIn() {
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: SCOPES,
-    callback: async (resp) => {
-      if (resp.error) { console.error('Auth error:', resp); return; }
-      gAccessToken = resp.access_token;
-      gTokenExpiry = Date.now() + (resp.expires_in * 1000);
-      localStorage.setItem('wtt_gtoken', gAccessToken);
-      localStorage.setItem('wtt_gexpiry', gTokenExpiry);
-      updateSyncUI('syncing', 'Connecting...');
-      await initSheet();
-    }
-  });
-  client.requestAccessToken();
+  // Wait for Google Identity Services to load
+  if (typeof google === 'undefined' || !google.accounts) {
+    const row = document.getElementById('syncSettingsRow');
+    if (row) row.innerHTML = `<div class="sync-status"><div class="sync-dot syncing"></div><span>Loading Google SDK...</span></div>`;
+    setTimeout(googleSignIn, 1000);
+    return;
+  }
+  try {
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: SCOPES,
+      callback: async (resp) => {
+        if (resp.error) {
+          console.error('Auth error:', resp);
+          renderSyncSettings();
+          return;
+        }
+        gAccessToken = resp.access_token;
+        gTokenExpiry = Date.now() + (resp.expires_in * 1000);
+        localStorage.setItem('wtt_gtoken', gAccessToken);
+        localStorage.setItem('wtt_gexpiry', gTokenExpiry);
+        updateSyncUI('syncing', '');
+        renderSyncSettings();
+        await initSheet();
+      }
+    });
+    client.requestAccessToken();
+  } catch(e) {
+    console.error('Sign in error:', e);
+    renderSyncSettings();
+  }
 }
 
 function googleSignOut() {
@@ -1575,19 +1592,21 @@ async function driveRequest(method, path, body) {
     body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) return null;
+  // DELETE returns 204 No Content — don't try to parse JSON
+  if (res.status === 204 || method === 'DELETE') return true;
   return res.json();
 }
 
 async function initSheet() {
-  // Try to find existing sheet by name in Drive
-  const search = await driveRequest('GET', `/files?q=name='${SHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id,name)`);
-  if (search?.files?.length > 0) {
-    sheetId = search.files[0].id;
-    localStorage.setItem('wtt_sheetid', sheetId);
-    // Load existing tasks from sheet and merge with local
-    await mergeWithSheet();
-  } else {
-    // Create new sheet
+  // Search ALL matching sheets sorted by most recently modified
+  const search = await driveRequest('GET',
+    `/files?q=name='${SHEET_NAME}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc`
+  );
+
+  const files = search?.files || [];
+
+  if (files.length === 0) {
+    // No sheet exists — create one
     const created = await sheetsRequest('POST', '', {
       properties: { title: SHEET_NAME },
       sheets: [{ properties: { title: 'Tasks' } }]
@@ -1595,13 +1614,43 @@ async function initSheet() {
     if (!created) return;
     sheetId = created.spreadsheetId;
     localStorage.setItem('wtt_sheetid', sheetId);
-    // Write headers
     await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A1:K1?valueInputOption=RAW`, {
       values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt']]
     });
-    // Upload all local tasks
     await pushAllTasksToSheet();
+
+  } else if (files.length === 1) {
+    // Exactly one sheet — use it
+    sheetId = files[0].id;
+    localStorage.setItem('wtt_sheetid', sheetId);
+    await mergeWithSheet();
+
+  } else {
+    // Multiple sheets — find the one with the most tasks (most data = real one)
+    let bestId = files[0].id;
+    let bestCount = -1;
+
+    for (const file of files) {
+      const data = await sheetsRequest('GET', `/${file.id}/values/Tasks!A2:A?majorDimension=ROWS`);
+      const count = data?.values?.length || 0;
+      if (count > bestCount) {
+        bestCount = count;
+        bestId = file.id;
+      }
+    }
+
+    // Delete all duplicates except the best one
+    for (const file of files) {
+      if (file.id !== bestId) {
+        await driveRequest('DELETE', `/files/${file.id}`);
+      }
+    }
+
+    sheetId = bestId;
+    localStorage.setItem('wtt_sheetid', sheetId);
+    await mergeWithSheet();
   }
+
   updateSyncUI('on', '');
   renderSyncSettings();
   showSyncIndicator('✓ Connected');

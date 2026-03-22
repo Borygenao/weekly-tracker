@@ -2,21 +2,21 @@
   "name": "Weekly.",
   "short_name": "Weekly.",
   "description": "Weekly task tracker with daily and weekly reports",
-  "start_url": "/weekly-tracker/",
-  "scope": "/weekly-tracker/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0d0d0d",
   "theme_color": "#0d0d0d",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/weekly-tracker/icon-192.png",
+      "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/weekly-tracker/icon-512.png",
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

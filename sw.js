@@ -1,5 +1,5 @@
-const CACHE = 'weekly-v14';
-const ASSETS = ['./', './index.html', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './manifest.json'];
+const CACHE = 'weekly-v15';
+const ASSETS = ['/', '/index.html', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

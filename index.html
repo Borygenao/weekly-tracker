@@ -3,25 +3,31 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <script>
-  // PWA launch guard — if opened from home screen at wrong path, redirect to app
+  // iOS PWA launch guard — runs before anything else
+  // iOS ignores manifest start_url and uses saved URL instead
+  // If launched as standalone from wrong path, immediately redirect
   (function() {
+    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    var isStandalone = window.navigator.standalone === true;
     var path = window.location.pathname;
-    var isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
-    if (isStandalone && path === '/') {
-      window.location.replace('/weekly-tracker/');
+    var correctPath = '/weekly-tracker/';
+    if (isIOS && isStandalone && path !== correctPath && !path.startsWith(correctPath)) {
+      window.location.replace(correctPath);
+      throw new Error('redirecting'); // stop rest of script from running
     }
   })();
 </script>
 <title>Weekly.</title>
 <meta name="google-site-verification" content="RTfoARTqOpDgrOW3-7Cm4q5wUlWRMUGQ2yTo5jsdUHg">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Weekly.">
 <meta name="theme-color" content="#0d0d0d">
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
 <link rel="manifest" href="/weekly-tracker/manifest.json">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/weekly-tracker/apple-touch-icon.png">
 <script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://apis.google.com/js/api.js" async></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">

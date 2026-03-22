@@ -129,8 +129,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .bottom-bar { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
 .clear-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; display:none; min-height:40px; }
 .clear-btn:hover { border-color:#ff5c5c; color:#ff5c5c; }
-.report-btn-bar { background:none; border:1px solid rgba(124,156,255,.3); color:var(--work); font-family:'Space Mono',monospace; font-size:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; display:none; min-height:40px; }
-.report-btn-bar:hover { background:rgba(124,156,255,.08); border-color:var(--work); }
 
 /* ── Report panel ── */
 .report-panel { background:#0d1020; border:1px solid rgba(124,156,255,.2); border-radius:var(--radius); overflow:hidden; max-height:0; transition:max-height .4s ease, margin .25s ease; }
@@ -511,7 +509,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <!-- Bottom bar -->
   <div class="bottom-bar">
     <button class="clear-btn" id="clearBtn" onclick="clearDone()">Clear completed</button>
-    <button class="report-btn-bar" id="reportBtnBar" onclick="toggleReport()" style="display:none">📋 Report</button>
   </div>
 
   <!-- Report panel -->
@@ -1455,7 +1452,6 @@ function render() {
   document.getElementById('count-personal').textContent = tasks.filter(t=>!t.done&&t.category==='personal').length;
 
   const hasWork = tasks.some(t=>t.category==='work');
-  document.getElementById('reportBtnBar').style.display = hasWork?'inline-block':'none';
   
 
   // Filter by category + status first
@@ -1497,7 +1493,10 @@ function render() {
   const bannerTextColor = isSunday ? 'var(--work)' : 'var(--accent)';
   let weekBanner = `<div style="font-family:'Space Mono',monospace;font-size:10px;color:${bannerTextColor};background:${bannerColor};border:1px solid ${bannerBorder};border-radius:8px;padding:8px 12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
     <span>${getWeekLabel()}</span>
-    ${hiddenCount > 0 ? `<span style="color:var(--muted)">${hiddenCount} task${hiddenCount>1?'s':''} next week</span>` : ''}
+    <div style="display:flex;align-items:center;gap:8px;">
+      ${hiddenCount > 0 ? `<span style="color:var(--muted)">${hiddenCount} task${hiddenCount>1?'s':''} next week</span>` : ''}
+      <button onclick="toggleReport()" style="background:none;border:1px solid ${bannerBorder};color:${bannerTextColor};font-family:'Space Mono',monospace;font-size:9px;padding:4px 8px;border-radius:6px;cursor:pointer;white-space:nowrap;min-height:26px;">📋 Report</button>
+    </div>
   </div>`;
 
   if (visible.length === 0) {
@@ -1875,6 +1874,7 @@ async function driveRequest(method, path, body) {
   if (res.status === 204 || method === 'DELETE') return true;
   return res.json();
 }
+
 
 async function initSheet() {
   // Search ALL matching sheets sorted by most recently modified

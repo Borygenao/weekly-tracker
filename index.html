@@ -131,6 +131,15 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .report-row { display:flex; gap:10px; margin-bottom:7px; align-items:flex-start; }
 .report-bullet { color:var(--work); flex-shrink:0; margin-top:3px; }
 .report-divider { border:none; border-top:1px solid rgba(124,156,255,.1); margin:14px 0; }
+.report-type-row { display:flex; gap:6px; align-items:center; margin-bottom:12px; }
+.report-type-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:7px 14px; border-radius:8px; cursor:pointer; transition:all .2s; min-height:34px; }
+.report-type-btn.active { background:rgba(124,156,255,.12); border-color:var(--work); color:var(--work); }
+.report-ai-toggle { margin-left:auto; display:flex; align-items:center; gap:7px; }
+.report-ai-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); }
+.toggle-switch { width:36px; height:20px; background:var(--border); border-radius:99px; cursor:pointer; position:relative; transition:background .2s; flex-shrink:0; }
+.toggle-switch.on { background:var(--accent); }
+.toggle-knob { width:16px; height:16px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; transition:left .2s; }
+.toggle-switch.on .toggle-knob { left:18px; }
 .report-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
 .report-action-btn { background:none; border:1px solid rgba(124,156,255,.3); color:var(--work); font-family:'Space Mono',monospace; font-size:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; min-height:40px; }
 .report-action-btn:hover { background:rgba(124,156,255,.08); }
@@ -443,23 +452,33 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <!-- Bottom bar -->
   <div class="bottom-bar">
     <button class="clear-btn" id="clearBtn" onclick="clearDone()">Clear completed</button>
-    <button class="report-btn-bar" id="reportBtnBar" onclick="toggleReport('daily')">📋 Daily</button>
-    <button class="report-btn-bar" id="weeklyReportBtn" onclick="toggleReport('weekly')" style="display:none">📊 Weekly</button>
+    <button class="report-btn-bar" id="reportBtnBar" onclick="toggleReport()" style="display:none">📋 Report</button>
   </div>
 
   <!-- Report panel -->
   <div class="report-panel" id="reportPanel">
     <div class="report-inner">
       <div class="report-header">
-        <div>
-          <div class="report-title" id="reportTitle">// daily work report</div>
-          <div class="report-date" id="reportDate"></div>
-        </div>
+        <div class="report-title">// reports</div>
         <button class="report-close" onclick="closeReport()">×</button>
       </div>
+
+      <!-- Report type selector -->
+      <div class="report-type-row">
+        <button class="report-type-btn active" id="typeBtnDaily" onclick="setReportType('daily')">Daily</button>
+        <button class="report-type-btn" id="typeBtnWeekly" onclick="setReportType('weekly')">Weekly</button>
+        <div class="report-ai-toggle" title="AI enhanced report">
+          <span class="report-ai-label">AI</span>
+          <div class="toggle-switch" id="aiToggle" onclick="toggleAI()">
+            <div class="toggle-knob"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-date" id="reportDate"></div>
       <div id="reportBody"><div class="report-generating">Tap Generate to create your report</div></div>
       <div class="report-actions">
-        <button class="report-action-btn" id="generateBtn" onclick="runReport()">⚡ Generate</button>
+        <button class="report-action-btn" onclick="runReport()">⚡ Generate</button>
         <button class="report-action-btn" id="copyReportBtn" onclick="copyReport()" style="display:none">Copy as Markdown</button>
       </div>
     </div>
@@ -702,39 +721,16 @@ function fixGrammarLines(lines) { return lines.map(l => fixGrammar(l)); }
 
 // ── Report ─────────────────────────────────────────────────────
 let activeReportType = 'daily';
+let aiReportEnabled = localStorage.getItem('wtt_ai_report') !== 'off';
 
-function toggleReport(type = 'daily') {
+function toggleReport() {
   const panel = document.getElementById('reportPanel');
-  const isOpen = panel.classList.contains('open');
-
-  if (isOpen && activeReportType === type) {
-    closeReport(); return;
-  }
-
-  activeReportType = type;
+  if (panel.classList.contains('open')) { closeReport(); return; }
   panel.classList.add('open');
   document.getElementById('reportBtn')?.classList.add('active');
-
-  const titleEl = document.getElementById('reportTitle');
-  const dateEl = document.getElementById('reportDate');
-  const generateBtn = document.getElementById('generateBtn');
-
-  if (type === 'daily') {
-    titleEl.textContent = '// daily work report';
-    dateEl.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    if (generateBtn) generateBtn.textContent = '⚡ Generate Daily';
-  } else {
-    titleEl.textContent = '// weekly work report';
-    const { start, end } = getWeekWindow();
-    const s = new Date(start+'T00:00:00'), e2 = new Date(end+'T00:00:00');
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    dateEl.textContent = `${months[s.getMonth()]} ${s.getDate()} – ${months[e2.getMonth()]} ${e2.getDate()}`;
-    if (generateBtn) generateBtn.textContent = '⚡ Generate Weekly';
-  }
-
-  document.getElementById('reportBody').innerHTML = `<div class="report-generating">Tap Generate to create your ${type} report</div>`;
-  document.getElementById('copyReportBtn').style.display = 'none';
-  reportText = '';
+  setReportType(activeReportType);
+  const tog = document.getElementById('aiToggle');
+  if (tog) tog.classList.toggle('on', aiReportEnabled);
 }
 
 function closeReport() {
@@ -742,14 +738,33 @@ function closeReport() {
   document.getElementById('reportBtn')?.classList.remove('active');
 }
 
-function runReport() {
-  // Explicitly check activeReportType to call the right generator
-  console.log('runReport called, type:', activeReportType);
-  if (activeReportType === 'weekly') {
-    generateWeeklyReport();
+function setReportType(type) {
+  activeReportType = type;
+  document.getElementById('typeBtnDaily')?.classList.toggle('active', type === 'daily');
+  document.getElementById('typeBtnWeekly')?.classList.toggle('active', type === 'weekly');
+  const dateEl = document.getElementById('reportDate');
+  if (type === 'daily') {
+    dateEl.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   } else {
-    generateReport();
+    const { start, end } = getWeekWindow();
+    const s = new Date(start+'T00:00:00'), e2 = new Date(end+'T00:00:00');
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    dateEl.textContent = `${months[s.getMonth()]} ${s.getDate()} – ${months[e2.getMonth()]} ${e2.getDate()}`;
   }
+  document.getElementById('reportBody').innerHTML = `<div class="report-generating">Tap Generate to create your ${type} report</div>`;
+  document.getElementById('copyReportBtn').style.display = 'none';
+  reportText = '';
+}
+
+function toggleAI() {
+  aiReportEnabled = !aiReportEnabled;
+  localStorage.setItem('wtt_ai_report', aiReportEnabled ? 'on' : 'off');
+  document.getElementById('aiToggle')?.classList.toggle('on', aiReportEnabled);
+}
+
+function runReport() {
+  if (activeReportType === 'weekly') generateWeeklyReport();
+  else generateReport();
 }
 
 async function generateReport() {
@@ -804,7 +819,8 @@ async function generateReport() {
   document.getElementById('reportBody').innerHTML = buildFallback();
   document.getElementById('copyReportBtn').style.display = 'inline-block';
 
-  // ── Try AI enhancement silently ──
+  // ── Try AI enhancement silently (only if enabled) ──
+  if (!aiReportEnabled) return;
   try {
     const payload = {
       completedToday: completedToday.map(t=>({task:t.text,notes:t.notes||''})),
@@ -941,7 +957,8 @@ async function generateWeeklyReport() {
   document.getElementById('reportBody').innerHTML = buildWeeklyFallback();
   document.getElementById('copyReportBtn').style.display = 'inline-block';
 
-  // ── Try AI enhancement ──
+  // ── Try AI enhancement (only if enabled) ──
+  if (!aiReportEnabled) return;
   try {
     const payload = {
       weekLabel,
@@ -1208,7 +1225,7 @@ function render() {
 
   const hasWork = tasks.some(t=>t.category==='work');
   document.getElementById('reportBtnBar').style.display = hasWork?'inline-block':'none';
-  document.getElementById('weeklyReportBtn').style.display = hasWork?'inline-block':'none';
+  
 
   // Filter by category + status first
   const catFiltered = tasks.filter(t => {

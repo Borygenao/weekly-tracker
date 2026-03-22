@@ -314,10 +314,17 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
 .modal-title-input { width:100%; background:none; border:none; border-bottom:1px solid var(--border); color:var(--text); font-family:'Syne',sans-serif; font-size:17px; font-weight:700; padding:4px 0 6px; outline:none; transition:border-color .2s; }
 .modal-title-input:focus { border-bottom-color:var(--accent); }
-.tag-row { display:flex; align-items:center; gap:6px; margin-top:8px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+.tag-section { margin-bottom:12px; }
+.tag-row { display:flex; align-items:center; gap:6px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; transition:border-color .2s; }
+.tag-row:focus-within { border-color:var(--accent); }
 .tag-prefix { font-family:'Space Mono',monospace; font-size:13px; color:var(--accent); font-weight:700; }
 .tag-input { flex:1; background:none; border:none; color:var(--text); font-family:'Space Mono',monospace; font-size:12px; outline:none; }
 .tag-input::placeholder { color:var(--muted); }
+.tag-dropdown { position:absolute; top:100%; left:0; right:0; background:#1a1a1a; border:1px solid var(--border); border-radius:8px; overflow:hidden; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); margin-top:3px; }
+.tag-option { padding:10px 14px; font-family:'Space Mono',monospace; font-size:11px; color:var(--text); cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .1s; }
+.tag-option:hover, .tag-option.highlighted { background:rgba(200,241,53,.08); }
+.tag-option-hash { color:var(--accent); font-weight:700; }
+.tag-option-count { margin-left:auto; color:var(--muted); font-size:9px; }
 
 .modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-bottom:4px; }
 .btn-save { background:var(--accent); color:#0d0d0d; border:none; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:14px 24px; border-radius:10px; cursor:pointer; min-height:var(--touch); transition:background .2s; }
@@ -584,6 +591,15 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
 
+    <!-- Tag field with autocomplete -->
+    <div class="tag-section" style="position:relative;">
+      <div class="tag-row">
+        <span class="tag-prefix">#</span>
+        <input class="tag-input" id="tagInput" type="text" placeholder="project-tag (optional)" maxlength="30" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onTagInput(this.value)" onfocus="onTagInput(this.value)" onkeydown="onTagKeydown(event)">
+      </div>
+      <div class="tag-dropdown" id="tagDropdown" style="display:none"></div>
+    </div>
+
     <!-- Day Picker -->
     <div class="day-picker-section">
       <div class="day-picker-label">Scheduled Day</div>
@@ -609,10 +625,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
       </div>
       <textarea class="notes-area" id="notesArea" placeholder="Type your notes — what you did, blockers, next steps..."></textarea>
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Clean up notes</button>
-      <div class="tag-row">
-        <span class="tag-prefix">#</span>
-        <input class="tag-input" id="tagInput" type="text" placeholder="project-tag (optional)" maxlength="30" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-      </div>
     </div>
 
     <div class="modal-footer">
@@ -1126,22 +1138,28 @@ async function generateWeeklyReport() {
       incomplete: incomplete.map(t=>({task:t.text, notes:t.notes||'', priority:t.priority||'', blocked:t.blocked||false})),
     };
 
-    const report = await claudeCall(`Write a professional weekly work report grouped by project. Use #tags in task names to identify projects.
+    const report = await claudeCall(`Write a professional weekly work report grouped by project.
+
+Tasks may have explicit #tags or no tags at all. For untagged tasks, infer the project/theme from the task name and notes and group them together. Name each group after its inferred project.
 
 Data:
 - Completed this week: ${JSON.stringify(payload.completedThisWeek)}
 - Incomplete tasks: ${JSON.stringify(payload.incomplete)}
 
-Group tasks by #tag. For each group write a one-sentence summary of progress.
+Instructions:
+1. Group ALL tasks by project — use #tag if present, otherwise infer from context
+2. For each project group write one concise sentence summarizing progress
+3. Note any blocked tasks
+
 Use these exact section markers:
 
 ###COMPLETED###
-- [summary per project group]
+- [ProjectName: one sentence summary of what was completed]
 
 ###INCOMPLETE###
-- [summary per project group — note if blocked]
+- [ProjectName: one sentence summary of what remains — note if blocked]
 
-Rules: professional tone, no emojis, concrete, one sentence per bullet.`, 700);
+Rules: professional tone, no emojis, concrete, infer project names from task content.`, 700);
 
     const parsed = {};
     const defs = [
@@ -2141,7 +2159,80 @@ function cleanOldMonthTasks() {
   localStorage.setItem('wtt_lastclean', currentMonthKey);
 }
 
-// ── Notifications ─────────────────────────────────────────────
+// ── Tag autocomplete ──────────────────────────────────────────
+let tagHighlightIndex = -1;
+
+function getExistingTags() {
+  // Collect all unique tags used across tasks, with usage count
+  const tagCount = new Map();
+  for (const t of tasks) {
+    if (t.tag) {
+      tagCount.set(t.tag, (tagCount.get(t.tag) || 0) + 1);
+    }
+  }
+  return [...tagCount.entries()].sort((a,b) => b[1]-a[1]); // sort by usage
+}
+
+function onTagInput(val) {
+  tagHighlightIndex = -1;
+  const dropdown = document.getElementById('tagDropdown');
+  if (!dropdown) return;
+  const query = val.trim().toLowerCase();
+  const allTags = getExistingTags();
+  // Filter tags matching query, or show all if empty
+  const filtered = query
+    ? allTags.filter(([tag]) => tag.includes(query) && tag !== query)
+    : allTags;
+  if (filtered.length === 0) { dropdown.style.display = 'none'; return; }
+  dropdown.innerHTML = filtered.slice(0, 6).map(([tag, count], i) =>
+    `<div class="tag-option" data-tag="${tag}" onmousedown="selectTagOption('${tag}')">
+      <span class="tag-option-hash">#</span>
+      <span>${tag}</span>
+      <span class="tag-option-count">${count} task${count!==1?'s':''}</span>
+    </div>`
+  ).join('');
+  dropdown.style.display = 'block';
+}
+
+function selectTagOption(tag) {
+  const input = document.getElementById('tagInput');
+  if (input) input.value = tag;
+  closeTagDropdown();
+}
+
+function closeTagDropdown() {
+  const dropdown = document.getElementById('tagDropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  tagHighlightIndex = -1;
+}
+
+function onTagKeydown(e) {
+  const dropdown = document.getElementById('tagDropdown');
+  if (!dropdown || dropdown.style.display === 'none') return;
+  const options = dropdown.querySelectorAll('.tag-option');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    tagHighlightIndex = Math.min(tagHighlightIndex + 1, options.length - 1);
+    options.forEach((o,i) => o.classList.toggle('highlighted', i === tagHighlightIndex));
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    tagHighlightIndex = Math.max(tagHighlightIndex - 1, -1);
+    options.forEach((o,i) => o.classList.toggle('highlighted', i === tagHighlightIndex));
+  } else if (e.key === 'Enter' && tagHighlightIndex >= 0) {
+    e.preventDefault();
+    const tag = options[tagHighlightIndex]?.dataset.tag;
+    if (tag) selectTagOption(tag);
+  } else if (e.key === 'Escape') {
+    closeTagDropdown();
+  }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.tag-section')) closeTagDropdown();
+});
+
+
 let swReg = null; // service worker registration
 
 async function initNotifications() {

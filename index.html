@@ -230,6 +230,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .priority-badge.medium { background:rgba(245,166,35,.15); color:var(--medium); }
 .priority-badge.low { background:rgba(76,175,125,.15); color:var(--low); }
 .priority-badge.detecting { background:rgba(85,85,85,.15); color:var(--muted); }
+.task-tag-badge { font-family:'Space Mono',monospace; font-size:8px; color:var(--accent); background:rgba(200,241,53,.1); border:1px solid rgba(200,241,53,.25); padding:1px 5px; border-radius:99px; }
 .blocked-badge { font-family:'Space Mono',monospace; font-size:8px; font-weight:700; color:var(--high); background:rgba(255,92,92,.12); border:1px solid rgba(255,92,92,.25); padding:1px 5px; border-radius:99px; letter-spacing:.5px; }
 .timestamps { display:flex; flex-wrap:wrap; gap:6px; }
 .timestamp { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); display:flex; align-items:center; gap:3px; }
@@ -310,6 +311,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .priority-pill.medium.active { background:rgba(245,166,35,.15); border-color:var(--medium); color:var(--medium); }
 .priority-pill.low.active { background:rgba(76,175,125,.15); border-color:var(--low); color:var(--low); }
 .priority-pill:not(.active):hover { border-color:#3a3a3a; color:var(--text); }
+
+.modal-title-input { width:100%; background:none; border:none; border-bottom:1px solid var(--border); color:var(--text); font-family:'Syne',sans-serif; font-size:17px; font-weight:700; padding:4px 0 6px; outline:none; transition:border-color .2s; }
+.modal-title-input:focus { border-bottom-color:var(--accent); }
+.tag-row { display:flex; align-items:center; gap:6px; margin-top:8px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+.tag-prefix { font-family:'Space Mono',monospace; font-size:13px; color:var(--accent); font-weight:700; }
+.tag-input { flex:1; background:none; border:none; color:var(--text); font-family:'Space Mono',monospace; font-size:12px; outline:none; }
+.tag-input::placeholder { color:var(--muted); }
 
 .modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-bottom:4px; }
 .btn-save { background:var(--accent); color:#0d0d0d; border:none; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:14px 24px; border-radius:10px; cursor:pointer; min-height:var(--touch); transition:background .2s; }
@@ -569,8 +577,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <div class="modal" id="modalSheet">
     <div class="modal-drag"></div>
     <div class="modal-header">
-      <div>
-        <div class="modal-title" id="modalTitle"></div>
+      <div style="flex:1;min-width:0;">
+        <input class="modal-title-input" id="modalTitleInput" type="text" maxlength="120" placeholder="Task name..." autocorrect="on">
         <div class="modal-subtitle" id="modalSubtitle"></div>
       </div>
       <button class="modal-close" onclick="closeModal()">×</button>
@@ -599,8 +607,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
       <div class="notes-header">
         <div class="notes-label">Notes</div>
       </div>
-      <textarea class="notes-area" id="notesArea" placeholder="Type or voice your notes — what you did, blockers, next steps..."></textarea>
+      <textarea class="notes-area" id="notesArea" placeholder="Type your notes — what you did, blockers, next steps..."></textarea>
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Clean up notes</button>
+      <div class="tag-row">
+        <span class="tag-prefix">#</span>
+        <input class="tag-input" id="tagInput" type="text" placeholder="project-tag (optional)" maxlength="30" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      </div>
     </div>
 
     <div class="modal-footer">
@@ -972,8 +984,10 @@ async function generateWeeklyReport() {
   const incomplete = workTasks.filter(t => !t.done);
 
   // ── Extract #tags from task text ──
-  function extractTag(text) {
-    const match = text.match(/#([a-zA-Z0-9_-]+)/);
+  function extractTag(t) {
+    // Use stored tag field first, fall back to #tag in text
+    if (t.tag) return t.tag.toLowerCase();
+    const match = t.text.match(/#([a-zA-Z0-9_-]+)/);
     return match ? match[1].toLowerCase() : null;
   }
 
@@ -985,7 +999,7 @@ async function generateWeeklyReport() {
   function groupByTag(taskList) {
     const groups = new Map();
     for (const t of taskList) {
-      const tag = extractTag(t.text) || '__untagged__';
+      const tag = extractTag(t) || '__untagged__';
       if (!groups.has(tag)) groups.set(tag, []);
       groups.get(tag).push(t);
     }
@@ -1190,12 +1204,15 @@ function setFilter(f, btn) {
 async function addTask() {
   const text = taskInput.value.trim(); if (!text) return;
   const id = Date.now();
-  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false };
+  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null };
   tasks.unshift(task); taskInput.value = '';
   save(); render();
+  // Auto-open modal so user can set tag, schedule, priority
+  openModal(id);
+  // Detect priority in background
   const p = await detectPriority(text, newTaskCat);
   const t = tasks.find(t=>t.id===id);
-  if (t) { t.priority = p||'medium'; save(); render(); }
+  if (t && t.priority === 'detecting') { t.priority = p||'medium'; save(); render(); }
 }
 
 function toggleTask(id) {
@@ -1266,9 +1283,12 @@ function openModal(id, isNewWork = false) {
   activeTaskId = id;
   pendingScheduleDate = t.scheduledDate || null;
 
-  document.getElementById('modalTitle').textContent = t.text;
+  document.getElementById('modalTitleInput').value = t.text;
   document.getElementById('modalSubtitle').textContent = t.category==='work'?'🔵 Work Task':'🟣 Personal Task';
   document.getElementById('notesArea').value = t.notes || '';
+  // Extract tag from task text and pre-fill tag input
+  const existingTag = (t.text.match(/#([a-zA-Z0-9_-]+)/) || [])[1] || t.tag || '';
+  document.getElementById('tagInput').value = existingTag;
 
   // Set priority selector
   const currentP = t.priority && ['high','medium','low'].includes(t.priority) ? t.priority : 'medium';
@@ -1300,10 +1320,17 @@ async function saveModal() {
   if (t) {
     const oldNotes = t.notes || '';
     const oldPriority = t.priority;
+    // Rename — strip any old tag from text, then update
+    const newTitle = document.getElementById('modalTitleInput').value.trim();
+    if (newTitle) t.text = newTitle.replace(/#[a-zA-Z0-9_-]+/g, '').trim() || newTitle;
+    // Tag — store separately and append to text for report grouping
+    const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/\s+/g, '-').toLowerCase();
+    t.tag = tagVal || null;
+    // Keep text clean — no # in title, tag stored separately
     t.notes = document.getElementById('notesArea').value.trim();
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
-    t.updatedAt = Date.now(); // always stamp so other devices know this is newer
+    t.updatedAt = Date.now();
     save(); render();
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
@@ -1465,6 +1492,7 @@ function render() {
 function renderTask(t, isOverdue=false) {
   const p = t.priority, cat = t.category||'work';
   const priorityHtml = p && p!=='detecting' ? `<span class="priority-badge ${p}">${p}</span>` : p==='detecting'?`<span class="priority-badge detecting">...</span>`:'';
+  const tagBadge = t.tag ? `<span class="task-tag-badge">#${escapeHtml(t.tag)}</span>` : '';
   const noteClass = cat==='work'?(t.notes?' has-notes':' no-notes-work'):(t.notes?' has-notes':'');
   const stateClass = t.done ? 'done' : t.blocked ? 'blocked' : '';
   const overdueClass = isOverdue && !t.blocked ? ' overdue-item' : '';
@@ -1484,6 +1512,7 @@ function renderTask(t, isOverdue=false) {
       <div class="task-meta">
         <span class="cat-badge ${cat}">${cat}</span>
         ${blockedBadge}
+        ${tagBadge}
         ${priorityHtml}
         <div class="timestamps">
           <div class="timestamp"><span class="ts-label">Added</span><span class="ts-value">${formatTime(t.createdAt||t.id)}</span></div>
@@ -1789,7 +1818,7 @@ async function initSheet() {
     sheetId = created.spreadsheetId;
     localStorage.setItem('wtt_sheetid', sheetId);
     await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A1:K1?valueInputOption=RAW`, {
-      values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt']]
+      values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt','tag']]
     });
     await pushAllTasksToSheet();
 
@@ -1850,7 +1879,8 @@ async function mergeWithSheet() {
     notes: r[7] || '',
     createdAt: parseInt(r[8]) || Date.now(),
     completedAt: r[9] ? parseInt(r[9]) : null,
-    updatedAt: parseInt(r[10]) || 0
+    updatedAt: parseInt(r[10]) || 0,
+    tag: r[11] || null
   }));
 
   console.log('DEBUG local tasks:', tasks.length);
@@ -1890,9 +1920,10 @@ async function pushAllTasksToSheet() {
     t.done?'true':'false', t.blocked?'true':'false',
     t.priority||'medium', t.scheduledDate||'',
     t.notes||'', t.createdAt||'', t.completedAt||'',
-    t.updatedAt || t.createdAt || Date.now()
+    t.updatedAt || t.createdAt || Date.now(),
+    t.tag||''
   ]);
-  await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:K?valueInputOption=RAW`, { values: rows });
+  await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:L?valueInputOption=RAW`, { values: rows });
 }
 
 async function syncTask(taskId) {

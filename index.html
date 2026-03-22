@@ -1680,7 +1680,6 @@ let gUserId = localStorage.getItem('wtt_userid') || null;
 let sheetId = localStorage.getItem('wtt_sheetid') || null;
 let isSyncing = false;
 let syncDebounceTimer = null;
-let pendingLocalChanges = false; // true while waiting to push to sheet
 
 function isTokenValid() {
   return gAccessToken && Date.now() < gTokenExpiry - 60000;
@@ -1861,7 +1860,7 @@ async function initSheet() {
 }
 
 async function mergeWithSheet() {
-  updateSyncUI('syncing', 'Merging tasks...');
+  updateSyncUI('syncing', 'Syncing...');
   const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:L?majorDimension=ROWS`);
   const rows = data?.values || [];
 
@@ -1881,33 +1880,44 @@ async function mergeWithSheet() {
     tag: r[11] || null
   }));
 
-  // Merge: sheet wins unless local is strictly newer
-  // Special rule: never overwrite a tag with null — keep whichever has a value
-  const merged = new Map();
-  for (const t of sheetTasks) merged.set(t.id, t);
-  for (const t of tasks) {
-    const sheetVersion = merged.get(t.id);
-    if (!sheetVersion) {
-      // Only in local — add it
-      merged.set(t.id, { ...t, updatedAt: t.updatedAt || t.createdAt });
-    } else {
-      const localTime = t.updatedAt || t.createdAt || 0;
-      const sheetTime = sheetVersion.updatedAt || sheetVersion.createdAt || 0;
-      if (localTime > sheetTime) {
-        merged.set(t.id, { ...t, updatedAt: localTime });
-      } else {
-        // Sheet wins — but preserve local tag if sheet has none
-        if (!sheetVersion.tag && t.tag) {
-          merged.set(t.id, { ...sheetVersion, tag: t.tag });
-        }
-      }
+  // Strategy:
+  // 1. Sheet is the source of truth for all fields
+  // 2. Only bring in local tasks that DON'T exist in sheet (added while offline)
+  // 3. For tasks that exist in both: sheet wins ALWAYS
+  //    Exception: if local has a tag/notes and sheet doesn't — keep local value
+  //    (handles case where sheet column was empty before feature was added)
+
+  const sheetMap = new Map();
+  for (const t of sheetTasks) sheetMap.set(t.id, t);
+
+  // Find local-only tasks (added offline)
+  const localOnlyTasks = tasks.filter(t => !sheetMap.has(t.id));
+
+  // Build final task list: all sheet tasks + local-only tasks
+  const finalTasks = [...sheetTasks];
+
+  // For sheet tasks, patch in local tag/notes only if sheet column is empty
+  for (const sheetTask of finalTasks) {
+    const localVersion = tasks.find(t => t.id === sheetTask.id);
+    if (localVersion) {
+      if (!sheetTask.tag && localVersion.tag) sheetTask.tag = localVersion.tag;
+      if (!sheetTask.notes && localVersion.notes) sheetTask.notes = localVersion.notes;
     }
   }
 
-  tasks = Array.from(merged.values()).sort((a,b) => b.createdAt - a.createdAt);
+  // Add offline-created local tasks
+  for (const t of localOnlyTasks) {
+    finalTasks.push({ ...t, updatedAt: t.updatedAt || t.createdAt });
+  }
+
+  tasks = finalTasks.sort((a,b) => b.createdAt - a.createdAt);
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
-  await pushAllTasksToSheet();
+
+  // Push back to sheet only if we added local-only tasks
+  if (localOnlyTasks.length > 0) {
+    await pushAllTasksToSheet();
+  }
 }
 
 async function pushAllTasksToSheet() {
@@ -1924,7 +1934,6 @@ async function pushAllTasksToSheet() {
     t.tag||''
   ]);
   await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:L?valueInputOption=RAW`, { values: rows });
-  pendingLocalChanges = false;
 }
 
 async function syncTask(taskId) {
@@ -1991,7 +2000,6 @@ function save() {
   tasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt }));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   if (sheetId && isTokenValid()) {
-    pendingLocalChanges = true;
     syncTask();
   }
 }

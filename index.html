@@ -624,7 +624,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="notes-label">Notes</div>
       </div>
       <textarea class="notes-area" id="notesArea" placeholder="Type your notes — what you did, blockers, next steps..."></textarea>
-      <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Clean up notes</button>
+      <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Auto-fill</button>
     </div>
 
     <div class="modal-footer">
@@ -742,22 +742,60 @@ async function detectPriority(text, cat) {
 }
 
 async function polishNotes() {
-  const raw = document.getElementById('notesArea').value.trim();
-  if (!raw) return;
   const btn = document.getElementById('btnPolishNote');
-  btn.disabled = true; btn.textContent = 'Cleaning up...';
+  btn.disabled = true; btn.textContent = 'Thinking...';
+
+  const taskName = document.getElementById('modalTitleInput').value.trim();
+  const raw = document.getElementById('notesArea').value.trim();
+  const currentTag = document.getElementById('tagInput').value.trim();
+  const t = tasks.find(t => t.id === activeTaskId);
+
+  // Build context from all work tasks
+  const workTasks = tasks.filter(t => t.category === 'work' && t.id !== activeTaskId);
+  const existingTags = [...new Set(workTasks.map(t => t.tag).filter(Boolean))];
+  const relatedTasks = workTasks
+    .filter(wt => (currentTag && wt.tag === currentTag) || (!currentTag && wt.scheduledDate === t?.scheduledDate))
+    .slice(0, 5)
+    .map(wt => wt.text);
+
   try {
-    const task = document.getElementById('modalTitle').textContent;
-    const result = await claudeCall(
-      `Clean up these rough notes for a work task into a concise, coherent paragraph.\n\nTask: "${task}"\nRaw notes: "${raw}"\n\nRewrite as 2-3 clear sentences. Keep all facts, blockers, and next steps. Plain text only, no bullet points, no markdown.`,
-      150
-    );
-    const cleaned = result.replace(/```[\s\S]*?```/g, '').replace(/`/g, '').replace(/^\s*[-*]\s*/gm, '').trim();
-    document.getElementById('notesArea').value = cleaned;
+    const prompt = `You are helping fill in details for a work task. Based on the context provided, do two things:
+
+1. Write clean, professional notes for this task (2-3 sentences max)
+2. Suggest the best #tag from existing tags, or propose a new short tag name
+
+Task name: "${taskName}"
+${raw ? `Existing notes: "${raw}"` : 'No notes yet.'}
+${relatedTasks.length ? `Related tasks on same day/project: ${relatedTasks.join(', ')}` : ''}
+${existingTags.length ? `Existing project tags: ${existingTags.join(', ')}` : ''}
+${currentTag ? `Current tag: #${currentTag}` : ''}
+
+Respond in this exact format:
+NOTES: [your 2-3 sentence notes here]
+TAG: [single tag word, no # symbol, use existing tag if it fits]`;
+
+    const result = await claudeCall(prompt, 200);
+
+    // Parse response
+    const notesMatch = result.match(/NOTES:\s*(.+?)(?=TAG:|$)/si);
+    const tagMatch = result.match(/TAG:\s*([a-zA-Z0-9_-]+)/i);
+
+    if (notesMatch?.[1]) {
+      const cleaned = notesMatch[1].trim().replace(/```[\s\S]*?```/g, '').replace(/`/g, '').trim();
+      document.getElementById('notesArea').value = cleaned;
+    }
+
+    if (tagMatch?.[1] && !currentTag) {
+      const suggestedTag = tagMatch[1].toLowerCase().replace(/\s+/g, '-');
+      document.getElementById('tagInput').value = suggestedTag;
+    }
   } catch(e) {
-    // silently fail — keep original notes
+    // AI unavailable — apply rule-based cleanup if there are notes
+    if (raw) {
+      document.getElementById('notesArea').value = fixGrammar(raw);
+    }
   }
-  btn.disabled = false; btn.textContent = '✦ Clean up notes';
+  btn.disabled = false; btn.textContent = '✦ Auto-fill';
 }
 
 // ── Rule-based grammar fixer (no AI needed) ───────────────────
@@ -1342,7 +1380,9 @@ async function saveModal() {
     // Tag
     const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/[\s]+/g, '-').toLowerCase();
     t.tag = tagVal || null;
-    t.notes = document.getElementById('notesArea').value.trim();
+    // Notes — never overwrite existing notes with empty (protects against cross-device wipe)
+    const newNotes = document.getElementById('notesArea').value.trim();
+    if (newNotes || !t.notes) t.notes = newNotes;
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
     t.updatedAt = Date.now();

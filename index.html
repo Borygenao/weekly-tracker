@@ -352,6 +352,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .ptr-spinner { width:14px; height:14px; border:2px solid rgba(200,241,53,.2); border-top-color:var(--accent); border-radius:50%; animation:ptr-spin .7s linear infinite; }
 @keyframes ptr-spin { to { transform:rotate(360deg); } }
 
+.time-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'Space Mono',monospace; font-size:11px; padding:5px 8px; border-radius:7px; outline:none; width:90px; }
+.time-input:focus { border-color:var(--accent); }
+
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 </style>
@@ -426,6 +429,24 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="settings-label">Google Sync</div>
         <div class="sync-settings-row" id="syncSettingsRow">
           <!-- populated by JS -->
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div class="settings-label">Notifications</div>
+        <div id="notifSettingsRow">
+          <button class="btn-sm green" onclick="requestNotifPermission()" id="notifEnableBtn">Enable Notifications</button>
+        </div>
+        <div id="notifTimesRow" style="display:none;margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="toggle-switch" id="morningToggle" onclick="toggleNotifTime('morning')"><div class="toggle-knob"></div></div>
+            <span class="settings-hint" style="flex:1">Morning briefing</span>
+            <input type="time" id="morningTime" class="time-input" value="08:00" onchange="saveNotifSettings()">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="toggle-switch" id="eveningToggle" onclick="toggleNotifTime('evening')"><div class="toggle-knob"></div></div>
+            <span class="settings-hint" style="flex:1">End of day nudge</span>
+            <input type="time" id="eveningTime" class="time-input" value="17:00" onchange="saveNotifSettings()">
+          </div>
         </div>
       </div>
     </div>
@@ -651,8 +672,8 @@ function toggleSettings() {
   if (settingsOpen) {
     const pi = document.getElementById('proxyUrlInput');
     if (pi) pi.value = localStorage.getItem('wtt_proxy') || '';
-
     renderSyncSettings();
+    if ('Notification' in window) updateNotifUI(Notification.permission);
   }
 }
 
@@ -1082,7 +1103,10 @@ function toggleTask(id) {
   }
   t.updatedAt = Date.now();
   render();
-  requestAnimationFrame(() => save());
+  requestAnimationFrame(() => {
+    save();
+    if (t.done) checkAllDone();
+  });
 }
 
 function deleteTask(id) { tasks = tasks.filter(t=>t.id!==id); save(); render(); }
@@ -1968,6 +1992,118 @@ function cleanOldMonthTasks() {
   localStorage.setItem('wtt_lastclean', currentMonthKey);
 }
 
+// ── Notifications ─────────────────────────────────────────────
+let swReg = null; // service worker registration
+
+async function initNotifications() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+  const perm = Notification.permission;
+  updateNotifUI(perm);
+}
+
+function updateNotifUI(perm) {
+  const btn = document.getElementById('notifEnableBtn');
+  const timesRow = document.getElementById('notifTimesRow');
+  if (!btn) return;
+
+  if (perm === 'granted') {
+    btn.style.display = 'none';
+    if (timesRow) {
+      timesRow.style.display = 'flex';
+      loadNotifSettings();
+    }
+  } else if (perm === 'denied') {
+    btn.textContent = 'Notifications blocked — check browser settings';
+    btn.disabled = true;
+  } else {
+    btn.style.display = 'inline-block';
+    btn.textContent = 'Enable Notifications';
+    if (timesRow) timesRow.style.display = 'none';
+  }
+}
+
+async function requestNotifPermission() {
+  if (!('Notification' in window)) {
+    alert('Notifications not supported in this browser.');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  updateNotifUI(perm);
+  if (perm === 'granted') {
+    saveNotifSettings();
+    showSyncIndicator('✓ Notifications enabled');
+  }
+}
+
+function loadNotifSettings() {
+  const settings = JSON.parse(localStorage.getItem('wtt_notif') || '{}');
+  const morningToggle = document.getElementById('morningToggle');
+  const eveningToggle = document.getElementById('eveningToggle');
+  const morningTime = document.getElementById('morningTime');
+  const eveningTime = document.getElementById('eveningTime');
+
+  const morningOn = settings.morningEnabled !== false; // default on
+  const eveningOn = settings.eveningEnabled !== false; // default on
+
+  if (morningToggle) morningToggle.classList.toggle('on', morningOn);
+  if (eveningToggle) eveningToggle.classList.toggle('on', eveningOn);
+  if (morningTime) morningTime.value = settings.morningTime || '08:00';
+  if (eveningTime) eveningTime.value = settings.eveningTime || '17:00';
+}
+
+function toggleNotifTime(type) {
+  const toggle = document.getElementById(type + 'Toggle');
+  if (!toggle) return;
+  toggle.classList.toggle('on');
+  saveNotifSettings();
+}
+
+function saveNotifSettings() {
+  const morningOn = document.getElementById('morningToggle')?.classList.contains('on') ?? true;
+  const eveningOn = document.getElementById('eveningToggle')?.classList.contains('on') ?? true;
+  const morningTime = document.getElementById('morningTime')?.value || '08:00';
+  const eveningTime = document.getElementById('eveningTime')?.value || '17:00';
+
+  const settings = { morningEnabled: morningOn, eveningEnabled: eveningOn, morningTime, eveningTime };
+  localStorage.setItem('wtt_notif', JSON.stringify(settings));
+  scheduleNotifications(settings);
+}
+
+function scheduleNotifications(settings) {
+  if (!swReg || Notification.permission !== 'granted') return;
+  swReg.active?.postMessage({ type: 'SCHEDULE_NOTIFICATIONS', schedule: settings });
+}
+
+// Listen for SW requests for task data
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data?.type === 'REQUEST_TASK_DATA') {
+    const tk = todayKey();
+    const workTasks = tasks.filter(t => t.category === 'work');
+    const todayTasks = workTasks.filter(t => t.scheduledDate === tk);
+    const data = {
+      todayCount: todayTasks.filter(t => !t.done && !t.blocked).length,
+      highCount: todayTasks.filter(t => !t.done && t.priority === 'high').length,
+      overdueCount: workTasks.filter(t => !t.done && t.scheduledDate && t.scheduledDate < tk).length,
+      pendingCount: workTasks.filter(t => !t.done).length,
+      doneCount: workTasks.filter(t => t.done && t.completedAt && toDateKey(new Date(t.completedAt)) === tk).length,
+    };
+    e.source?.postMessage({ type: 'TASK_DATA_RESPONSE', notifType: e.data.notifType, data });
+  }
+});
+
+// All done notification — fires instantly when last task completed
+function checkAllDone() {
+  if (Notification.permission !== 'granted') return;
+  const todayWork = tasks.filter(t => t.category === 'work' && t.scheduledDate === todayKey());
+  if (todayWork.length > 0 && todayWork.every(t => t.done)) {
+    new Notification('All done! 🎉', {
+      body: `All ${todayWork.length} work tasks completed for today.`,
+      icon: '/weekly-tracker/icon-192.png',
+      tag: 'all-done'
+    });
+  }
+}
+
 // ── Init ───────────────────────────────────────────────────────
 initAIStatus();
 render();
@@ -1975,8 +2111,16 @@ cleanOldMonthTasks();
 window.addEventListener('load', () => {
   initATH();
   setTimeout(initGoogleSync, 1000);
+  setTimeout(initNotifications, 1500);
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      swReg = reg;
+      // Re-schedule notifications after SW registers
+      const saved = localStorage.getItem('wtt_notif');
+      if (saved && Notification.permission === 'granted') {
+        scheduleNotifications(JSON.parse(saved));
+      }
+    }).catch(() => {});
   }
   fetch('https://wtt-proxy.onrender.com/api/claude', {
     method: 'POST',

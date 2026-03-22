@@ -3,6 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<script>
+  // PWA launch guard — if opened from home screen at wrong path, redirect to app
+  (function() {
+    var path = window.location.pathname;
+    var isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+    if (isStandalone && path === '/') {
+      window.location.replace('/weekly-tracker/');
+    }
+  })();
+</script>
 <title>Weekly.</title>
 <meta name="google-site-verification" content="RTfoARTqOpDgrOW3-7Cm4q5wUlWRMUGQ2yTo5jsdUHg">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -10,7 +20,7 @@
 <meta name="apple-mobile-web-app-title" content="Weekly.">
 <meta name="theme-color" content="#0d0d0d">
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
-<link rel="manifest" href="./manifest.json">
+<link rel="manifest" href="/weekly-tracker/manifest.json">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script src="https://accounts.google.com/gsi/client"></script>
 <script src="https://apis.google.com/js/api.js" async></script>
@@ -2025,7 +2035,7 @@ document.addEventListener('touchend', async () => {
 });
 </script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
-  <a href="/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>
+  <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>
 </div>
 
 </body>

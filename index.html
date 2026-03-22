@@ -133,7 +133,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 /* ── Report panel ── */
 .report-overlay { position:fixed; inset:0; z-index:400; pointer-events:none; }
 .report-overlay.open { pointer-events:all; }
-.report-card { position:absolute; left:12px; right:12px; top:var(--report-top, 120px); background:#0d1020; border:1px solid rgba(124,156,255,.25); border-radius:14px; padding:18px; max-height:75vh; overflow-y:auto; box-shadow:0 16px 48px rgba(0,0,0,.6); transform:translateY(-8px) scale(.97); opacity:0; transition:transform .25s ease, opacity .2s ease; pointer-events:none; }
+.report-card { position:absolute; left:12px; right:12px; top:var(--report-top, 120px); bottom:16px; background:#0d1020; border:1px solid rgba(124,156,255,.25); border-radius:14px; padding:18px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; box-shadow:0 16px 48px rgba(0,0,0,.6); transform:translateY(-8px) scale(.97); opacity:0; transition:transform .25s ease, opacity .2s ease; pointer-events:none; }
 .report-overlay.open .report-card { transform:translateY(0) scale(1); opacity:1; pointer-events:all; }
 .report-card-arrow { width:10px; height:10px; background:#0d1020; border-top:1px solid rgba(124,156,255,.25); border-left:1px solid rgba(124,156,255,.25); position:absolute; top:-6px; right:24px; transform:rotate(45deg); }
 .report-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:8px; }
@@ -861,6 +861,12 @@ function closeReport() {
 function handleReportOverlayClick(e) {
   if (e.target === document.getElementById('reportOverlay')) closeReport();
 }
+
+// Prevent backdrop scroll bleed on iOS
+document.getElementById('reportOverlay')?.addEventListener('touchmove', e => {
+  if (e.target.closest('.report-card')) return; // allow card to scroll
+  e.preventDefault();
+}, { passive: false });
 
 function setReportType(type) {
   activeReportType = type;

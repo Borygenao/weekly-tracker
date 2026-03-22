@@ -352,6 +352,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .ptr-spinner { width:14px; height:14px; border:2px solid rgba(200,241,53,.2); border-top-color:var(--accent); border-radius:50%; animation:ptr-spin .7s linear infinite; }
 @keyframes ptr-spin { to { transform:rotate(360deg); } }
 
+.weekly-group { margin-bottom:14px; }
+.weekly-group-header { display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+.weekly-tag-label { font-family:'Space Mono',monospace; font-size:10px; font-weight:700; color:var(--accent); min-width:80px; }
+.weekly-progress-bar { flex:1; height:3px; background:var(--border); border-radius:99px; overflow:hidden; }
+.weekly-progress-fill { height:100%; border-radius:99px; transition:width .3s ease; }
+.weekly-status-text { font-family:'Space Mono',monospace; font-size:9px; white-space:nowrap; }
+
 .time-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'Space Mono',monospace; font-size:11px; padding:5px 8px; border-radius:7px; outline:none; width:90px; }
 .time-input:focus { border-color:var(--accent); }
 
@@ -946,52 +953,154 @@ async function generateWeeklyReport() {
   const { start: wStart, end: wEnd } = getWeekWindow();
   const workTasks = tasks.filter(t => t.category === 'work');
 
-  // Completed this week
-  const completedWeek = workTasks.filter(t =>
-    t.done && t.completedAt &&
-    toDateKey(new Date(t.completedAt)) >= wStart &&
-    toDateKey(new Date(t.completedAt)) <= wEnd
-  );
-
-  // Incomplete (active + blocked, within window or unscheduled)
-  const incomplete = workTasks.filter(t => !t.done);
-
   if (workTasks.length === 0) {
     document.getElementById('reportBody').innerHTML = `<div class="report-generating">No work tasks found.</div>`;
     return;
   }
 
   const { start, end } = getWeekWindow();
-  const s = new Date(start+'T00:00:00'), e = new Date(end+'T00:00:00');
+  const s = new Date(start+'T00:00:00'), e2 = new Date(end+'T00:00:00');
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const weekLabel = `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}`;
+  const weekLabel = `${months[s.getMonth()]} ${s.getDate()} – ${months[e2.getMonth()]} ${e2.getDate()}`;
 
-  // ── Always build fallback instantly ──
-  function buildWeeklyFallback() {
-    const sections = [
-      { label:'Completed', mdLabel:'## Completed', items:completedWeek, fallback:'No tasks completed this week.', required:true },
-      { label:'Incomplete', mdLabel:'## Incomplete', items:incomplete, fallback:'No incomplete tasks.', required:true },
-    ];
+  // Completed this week
+  const completedWeek = workTasks.filter(t =>
+    t.done && t.completedAt &&
+    toDateKey(new Date(t.completedAt)) >= wStart &&
+    toDateKey(new Date(t.completedAt)) <= wEnd
+  );
+  const incomplete = workTasks.filter(t => !t.done);
+
+  // ── Extract #tags from task text ──
+  function extractTag(text) {
+    const match = text.match(/#([a-zA-Z0-9_-]+)/);
+    return match ? match[1].toLowerCase() : null;
+  }
+
+  function stripTag(text) {
+    return text.replace(/#[a-zA-Z0-9_-]+/g, '').trim();
+  }
+
+  // ── Group tasks by tag ──
+  function groupByTag(taskList) {
+    const groups = new Map();
+    for (const t of taskList) {
+      const tag = extractTag(t.text) || '__untagged__';
+      if (!groups.has(tag)) groups.set(tag, []);
+      groups.get(tag).push(t);
+    }
+    return groups;
+  }
+
+  // ── Build grouped report ──
+  function buildGroupedReport() {
+    const completedGroups = groupByTag(completedWeek);
+    const incompleteGroups = groupByTag(incomplete);
+
+    // Collect all unique tags across both
+    const allTags = new Set([...completedGroups.keys(), ...incompleteGroups.keys()]);
+    // Put tagged groups first, untagged last
+    const sortedTags = [...allTags].filter(t => t !== '__untagged__').sort();
+    if (allTags.has('__untagged__')) sortedTags.push('__untagged__');
+
     let md = `# Weekly Work Report\n${weekLabel}\n\n`;
     let html = '';
-    for (const s of sections) {
-      const lines = s.items.length
-        ? fixGrammarLines(s.items.map(t => t.notes ? `${t.text} — ${t.notes}` : t.text))
-        : [s.fallback];
-      const isFallback = !s.items.length;
-      md += `${s.mdLabel}\n${lines.map(l=>`- ${l}`).join('\n')}\n\n`;
-      html += `<div class="report-section">
-        <div class="report-section-title">${s.label}</div>
-        <div class="report-content">
-          ${lines.map(l=>`<div class="report-row"><span class="report-bullet" style="${isFallback?'opacity:.3':''}">—</span><span style="${isFallback?'color:var(--muted)':''}">${escapeHtml(l)}</span></div>`).join('')}
-        </div>
-      </div><hr class="report-divider">`;
+
+    // If no tags used at all — fall back to simple two-section format
+    const hasTags = sortedTags.some(t => t !== '__untagged__');
+
+    if (!hasTags) {
+      // Simple format — no tags
+      const sections = [
+        { label:'Completed', mdLabel:'## Completed', items:completedWeek, fallback:'No tasks completed this week.' },
+        { label:'Incomplete', mdLabel:'## Incomplete', items:incomplete, fallback:'No incomplete tasks.' },
+      ];
+      for (const sec of sections) {
+        const lines = sec.items.length
+          ? fixGrammarLines(sec.items.map(t => {
+              const text = stripTag(t.text);
+              return t.notes ? `${text} — ${t.notes}` : text;
+            }))
+          : [sec.fallback];
+        const isFb = !sec.items.length;
+        md += `${sec.mdLabel}\n${lines.map(l=>`- ${l}`).join('\n')}\n\n`;
+        html += buildReportSection(sec.label, lines, isFb);
+      }
+    } else {
+      // Grouped by tag format
+      md += `## Summary by Project\n\n`;
+      html += `<div class="report-section"><div class="report-section-title">By Project</div><div class="report-content">`;
+
+      for (const tag of sortedTags) {
+        const done = completedGroups.get(tag) || [];
+        const todo = incompleteGroups.get(tag) || [];
+        const total = done.length + todo.length;
+        const tagLabel = tag === '__untagged__' ? 'Other tasks' : `#${tag}`;
+        const blocked = todo.filter(t => t.blocked).length;
+
+        // Progress indicator
+        const pct = total > 0 ? Math.round((done.length / total) * 100) : 0;
+        const statusColor = pct === 100 ? 'var(--low)' : blocked > 0 ? 'var(--high)' : 'var(--medium)';
+        const statusText = pct === 100 ? '✓ Complete' : blocked > 0 ? `${blocked} blocked` : `${done.length}/${total} done`;
+
+        md += `### ${tagLabel}\n`;
+        html += `<div class="weekly-group">
+          <div class="weekly-group-header">
+            <span class="weekly-tag-label">${escapeHtml(tagLabel)}</span>
+            <div class="weekly-progress-bar"><div class="weekly-progress-fill" style="width:${pct}%;background:${statusColor}"></div></div>
+            <span class="weekly-status-text" style="color:${statusColor}">${statusText}</span>
+          </div>`;
+
+        // Done tasks
+        if (done.length) {
+          done.forEach(t => {
+            const text = fixGrammar(stripTag(t.text));
+            md += `- ✓ ${text}\n`;
+            html += `<div class="report-row"><span class="report-bullet" style="color:var(--low)">✓</span><span style="opacity:.6;text-decoration:line-through">${escapeHtml(text)}</span></div>`;
+          });
+        }
+        // Incomplete tasks
+        if (todo.length) {
+          todo.forEach(t => {
+            const text = fixGrammar(stripTag(t.text));
+            const badge = t.blocked ? ` <span style="color:var(--high);font-size:9px">BLOCKED</span>` : '';
+            md += `- ${t.blocked ? '🚫 ' : '○ '}${text}\n`;
+            html += `<div class="report-row"><span class="report-bullet" style="color:${t.blocked?'var(--high)':'var(--muted)'}">○</span><span>${escapeHtml(text)}${badge}</span></div>`;
+          });
+        }
+
+        md += '\n';
+        html += `</div>`;
+      }
+
+      html += `</div></div><hr class="report-divider">`;
+
+      // Summary stats
+      const totalDone = completedWeek.length;
+      const totalLeft = incomplete.length;
+      const totalBlocked = incomplete.filter(t=>t.blocked).length;
+      md += `## Stats\n- Completed: ${totalDone}\n- Remaining: ${totalLeft}\n- Blocked: ${totalBlocked}\n\n`;
+      html += `<div class="report-section"><div class="report-section-title">Stats</div><div class="report-content">
+        <div class="report-row"><span class="report-bullet" style="color:var(--low)">—</span><span>Completed: <strong>${totalDone}</strong></span></div>
+        <div class="report-row"><span class="report-bullet">—</span><span>Remaining: <strong>${totalLeft}</strong></span></div>
+        <div class="report-row"><span class="report-bullet" style="color:var(--high)">—</span><span>Blocked: <strong>${totalBlocked}</strong></span></div>
+      </div></div>`;
     }
+
     reportText = md.trim();
     return html;
   }
 
-  document.getElementById('reportBody').innerHTML = buildWeeklyFallback();
+  function buildReportSection(label, lines, isFallback) {
+    return `<div class="report-section">
+      <div class="report-section-title">${label}</div>
+      <div class="report-content">
+        ${lines.map(l=>`<div class="report-row"><span class="report-bullet" style="${isFallback?'opacity:.3':''}">—</span><span style="${isFallback?'color:var(--muted)':''}">${escapeHtml(l)}</span></div>`).join('')}
+      </div>
+    </div><hr class="report-divider">`;
+  }
+
+  document.getElementById('reportBody').innerHTML = buildGroupedReport();
   document.getElementById('copyReportBtn').style.display = 'inline-block';
 
   // ── Try AI enhancement (only if enabled) ──
@@ -1003,23 +1112,23 @@ async function generateWeeklyReport() {
       incomplete: incomplete.map(t=>({task:t.text, notes:t.notes||'', priority:t.priority||'', blocked:t.blocked||false})),
     };
 
-    const report = await claudeCall(`Write a professional weekly work report. Use the data below.
+    const report = await claudeCall(`Write a professional weekly work report grouped by project. Use #tags in task names to identify projects.
 
 Data:
 - Completed this week: ${JSON.stringify(payload.completedThisWeek)}
 - Incomplete tasks: ${JSON.stringify(payload.incomplete)}
 
-Use these exact section markers. Two sections only. No intro text:
+Group tasks by #tag. For each group write a one-sentence summary of progress.
+Use these exact section markers:
 
 ###COMPLETED###
-- [one bullet per completed task with notes as context. If none: No tasks completed this week.]
+- [summary per project group]
 
 ###INCOMPLETE###
-- [one bullet per incomplete task — note if blocked. If none: No incomplete tasks.]
+- [summary per project group — note if blocked]
 
-Rules: professional tone, no emojis, concrete, one sentence per bullet.`, 600);
+Rules: professional tone, no emojis, concrete, one sentence per bullet.`, 700);
 
-    // Parse AI response
     const parsed = {};
     const defs = [
       {key:'###COMPLETED###', fallback:'No tasks completed this week.'},
@@ -1042,21 +1151,18 @@ Rules: professional tone, no emojis, concrete, one sentence per bullet.`, 600);
     for (const d of defs) {
       const isFb = parsed[d.key].length===1 && parsed[d.key][0]===d.fallback;
       md2 += `${mdLabels[d.key]}\n${parsed[d.key].map(l=>`- ${l}`).join('\n')}\n\n`;
-      html2 += `<div class="report-section">
-        <div class="report-section-title">${labels[d.key]}</div>
-        <div class="report-content">
-          ${parsed[d.key].map(l=>`<div class="report-row"><span class="report-bullet" style="${isFb?'opacity:.3':''}">—</span><span style="${isFb?'color:var(--muted)':''}">${escapeHtml(l)}</span></div>`).join('')}
-        </div>
-      </div><hr class="report-divider">`;
+      html2 += buildReportSection(labels[d.key], parsed[d.key], isFb);
     }
     if (html2) { reportText=md2.trim(); document.getElementById('reportBody').innerHTML=html2; }
   } catch(e) {
     const note = document.createElement('div');
     note.style.cssText = 'font-family:Space Mono,monospace;font-size:9px;color:var(--muted);margin-top:6px;text-align:center';
-    note.textContent = '(basic summary — AI unavailable)';
+    note.textContent = '(AI unavailable — showing grouped summary)';
     document.getElementById('reportBody').appendChild(note);
   }
 }
+
+
 
 
 function toggleContextVoice() {} // removed

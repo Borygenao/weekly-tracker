@@ -315,6 +315,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .cal-legend-dot.done { background:var(--low); }
 .cal-legend-dot.pending { background:var(--muted2); }
 
+/* ── Add to Home Screen banner ── */
+.ath-banner { background:#111; border-bottom:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; gap:10px; animation:fadeDown .3s ease; }
+.ath-text { flex:1; font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); line-height:1.5; display:flex; gap:8px; align-items:flex-start; }
+.ath-text strong { color:var(--text); }
+.ath-dismiss { background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:4px 8px; flex-shrink:0; min-width:32px; }
+
 /* ── Pull to refresh ── */
 .ptr-indicator { position:fixed; top:0; left:0; right:0; display:flex; align-items:center; justify-content:center; height:0; overflow:hidden; background:var(--surface); font-family:'Space Mono',monospace; font-size:10px; color:var(--accent); z-index:600; transition:height .15s; gap:6px; }
 .ptr-indicator.visible { height:44px; }
@@ -330,6 +336,16 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <div class="ptr-spinner"></div>
   <span>Refreshing...</span>
 </div>
+
+<!-- Add to Home Screen banner — only shows if not installed as PWA -->
+<div class="ath-banner" id="athBanner" style="display:none">
+  <div class="ath-text">
+    <span>📲</span>
+    <span>Add to Home Screen for the best experience — tap <strong>Share → Add to Home Screen</strong></span>
+  </div>
+  <button class="ath-dismiss" onclick="dismissATH()">✕</button>
+</div>
+
 <div class="container">
 
   <!-- Header -->
@@ -689,42 +705,51 @@ let activeReportType = 'daily';
 
 function toggleReport(type = 'daily') {
   const panel = document.getElementById('reportPanel');
-  const btn = document.getElementById('reportBtn');
   const isOpen = panel.classList.contains('open');
 
   if (isOpen && activeReportType === type) {
     closeReport(); return;
   }
+
   activeReportType = type;
   panel.classList.add('open');
-  btn.classList.add('active');
+  document.getElementById('reportBtn')?.classList.add('active');
 
   const titleEl = document.getElementById('reportTitle');
   const dateEl = document.getElementById('reportDate');
+  const generateBtn = document.getElementById('generateBtn');
 
   if (type === 'daily') {
     titleEl.textContent = '// daily work report';
     dateEl.textContent = new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+    if (generateBtn) generateBtn.textContent = '⚡ Generate Daily';
   } else {
     titleEl.textContent = '// weekly work report';
     const { start, end } = getWeekWindow();
-    const s = new Date(start+'T00:00:00'), e = new Date(end+'T00:00:00');
+    const s = new Date(start+'T00:00:00'), e2 = new Date(end+'T00:00:00');
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    dateEl.textContent = `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}`;
+    dateEl.textContent = `${months[s.getMonth()]} ${s.getDate()} – ${months[e2.getMonth()]} ${e2.getDate()}`;
+    if (generateBtn) generateBtn.textContent = '⚡ Generate Weekly';
   }
 
-  document.getElementById('reportBody').innerHTML = `<div class="report-generating">Tap Generate to create your report</div>`;
+  document.getElementById('reportBody').innerHTML = `<div class="report-generating">Tap Generate to create your ${type} report</div>`;
   document.getElementById('copyReportBtn').style.display = 'none';
+  reportText = '';
 }
 
 function closeReport() {
   document.getElementById('reportPanel').classList.remove('open');
-  document.getElementById('reportBtn').classList.remove('active');
+  document.getElementById('reportBtn')?.classList.remove('active');
 }
 
 function runReport() {
-  if (activeReportType === 'weekly') generateWeeklyReport();
-  else generateReport();
+  // Explicitly check activeReportType to call the right generator
+  console.log('runReport called, type:', activeReportType);
+  if (activeReportType === 'weekly') {
+    generateWeeklyReport();
+  } else {
+    generateReport();
+  }
 }
 
 async function generateReport() {
@@ -1729,14 +1754,33 @@ function updateSyncUI(state, text) {
 
 async function initGoogleSync() {
   renderSyncSettings();
-  if (isTokenValid() && sheetId) {
-    updateSyncUI('syncing', '');
-    // Always pull from sheet on load — sheet is source of truth
-    await mergeWithSheet();
-    updateSyncUI('on', '');
-    renderSyncSettings();
-    showSyncIndicator('✓ Connected');
+  if (sheetId) {
+    // Always try to get a valid token first
+    const valid = isTokenValid() || await getValidToken();
+    if (valid) {
+      updateSyncUI('syncing', '');
+      await mergeWithSheet();
+      updateSyncUI('on', '');
+      renderSyncSettings();
+      showSyncIndicator('✓ Connected');
+      startTokenKeepalive();
+    } else {
+      renderSyncSettings();
+    }
   }
+}
+
+// Proactively refresh token every 45 min so it never expires during use
+let keepaliveTimer = null;
+function startTokenKeepalive() {
+  if (keepaliveTimer) clearInterval(keepaliveTimer);
+  keepaliveTimer = setInterval(async () => {
+    if (!sheetId) return;
+    if (!isTokenValid()) {
+      await getValidToken();
+      renderSyncSettings();
+    }
+  }, 45 * 60 * 1000); // every 45 minutes
 }
 
 function addSignOutButton() { renderSyncSettings(); }
@@ -1890,6 +1934,7 @@ initAIStatus();
 render();
 cleanOldMonthTasks();
 window.addEventListener('load', () => {
+  initATH();
   setTimeout(initGoogleSync, 1000);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -1901,12 +1946,30 @@ window.addEventListener('load', () => {
   }).catch(() => {});
 });
 
+// ── Add to Home Screen ────────────────────────────────────────
+function initATH() {
+  // Only show if NOT already installed as PWA and user hasn't dismissed
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  const dismissed = localStorage.getItem('wtt_ath_dismissed');
+  if (!isStandalone && !dismissed) {
+    document.getElementById('athBanner').style.display = 'flex';
+  }
+}
+function dismissATH() {
+  document.getElementById('athBanner').style.display = 'none';
+  localStorage.setItem('wtt_ath_dismissed', '1');
+}
+
 // ── Auto-refresh when app comes back to foreground ─────────────
-document.addEventListener('visibilitychange', () => {
+document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
     render(); // re-render so day groupings update (today/tomorrow etc.)
-    if (sheetId && isTokenValid()) {
-      mergeWithSheet().catch(() => {});
+    if (sheetId) {
+      const valid = isTokenValid() || await getValidToken();
+      if (valid) {
+        renderSyncSettings();
+        mergeWithSheet().catch(() => {});
+      }
     }
   }
 });

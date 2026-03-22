@@ -1972,6 +1972,18 @@ async function mergeWithSheet() {
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
 
+  // If modal is open, refresh its content with latest data from sheet
+  if (activeTaskId) {
+    const t = tasks.find(t => t.id === activeTaskId);
+    if (t) {
+      // Only update fields if they have data in sheet but were empty in modal
+      const notesArea = document.getElementById('notesArea');
+      const tagInputEl = document.getElementById('tagInput');
+      if (notesArea && t.notes && !notesArea.value.trim()) notesArea.value = t.notes;
+      if (tagInputEl && t.tag && !tagInputEl.value.trim()) tagInputEl.value = t.tag;
+    }
+  }
+
   // Push back to sheet only if we added local-only tasks
   if (localOnlyTasks.length > 0) {
     await pushAllTasksToSheet();
@@ -2021,6 +2033,8 @@ function updateSyncUI(state, text) {
   // dot/text elements only exist when settings is open — safe to ignore here
 }
 
+let lastSyncTime = 0;
+
 async function initGoogleSync() {
   renderSyncSettings();
   if (sheetId && (isTokenValid() || gUserId)) {
@@ -2028,6 +2042,7 @@ async function initGoogleSync() {
     if (valid) {
       updateSyncUI('syncing', '');
       await mergeWithSheet();
+      lastSyncTime = Date.now();
       updateSyncUI('on', '');
       renderSyncSettings();
       showSyncIndicator('✓ Connected');
@@ -2426,12 +2441,17 @@ function dismissATH() {
 // ── Auto-refresh when app comes back to foreground ─────────────
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
-    render(); // re-render so day groupings update (today/tomorrow etc.)
+    render();
     if (sheetId) {
-      const valid = isTokenValid() || await getValidToken();
-      if (valid) {
-        renderSyncSettings();
-        mergeWithSheet().catch(() => {});
+      const stale = Date.now() - lastSyncTime > 2 * 60 * 1000; // 2 minutes
+      if (stale) {
+        const valid = isTokenValid() || await getValidToken();
+        if (valid) {
+          renderSyncSettings();
+          mergeWithSheet().then(() => {
+            lastSyncTime = Date.now();
+          }).catch(() => {});
+        }
       }
     }
   }
@@ -2462,8 +2482,11 @@ document.addEventListener('touchend', async () => {
   ptrActive = false;
   ptrStartY = 0;
   render();
-  if (sheetId && isTokenValid()) {
-    try { await mergeWithSheet(); } catch(e) {}
+  if (sheetId) {
+    const valid = isTokenValid() || await getValidToken();
+    if (valid) {
+      try { await mergeWithSheet(); } catch(e) {}
+    }
   }
   setTimeout(() => {
     document.getElementById('ptrIndicator').classList.remove('visible');

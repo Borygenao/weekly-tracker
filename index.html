@@ -1260,7 +1260,7 @@ function setFilter(f, btn) {
 async function addTask() {
   const text = taskInput.value.trim(); if (!text) return;
   const id = Date.now();
-  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null };
+  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:id };
   tasks.unshift(task); taskInput.value = '';
   save(); render();
   // Auto-open modal so user can set tag, schedule, priority
@@ -1558,7 +1558,6 @@ function renderTask(t, isOverdue=false) {
   return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" draggable="true" data-id="${t.id}"
       ondragstart="dragStart(event,${t.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${t.id})" ondragend="dragEnd(event)"
       onclick="openModal(${t.id})">
-    <div class="drag-handle" onclick="event.stopPropagation()" title="Drag to reorder">⠿</div>
     <div class="checkbox" onclick="event.stopPropagation();toggleTask(${t.id})">
       <div class="checkbox-inner">
         <span class="icon-check"><svg width="11" height="9" viewBox="0 0 12 10" fill="none"><path d="M1 5L4.5 8.5L11 1.5" stroke="#0d0d0d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -1609,23 +1608,39 @@ let touchDragEl = null;
 let touchDragId = null;
 let touchStartY = 0;
 
+let longPressTimer = null;
+const LONG_PRESS_MS = 500;
+
 function initDrag() {
-  // Called after each render to attach touch events to drag handles
-  document.querySelectorAll('.drag-handle').forEach(handle => {
-    handle.addEventListener('touchstart', onHandleTouchStart, { passive: false });
+  document.querySelectorAll('.task-item').forEach(item => {
+    item.addEventListener('touchstart', onItemTouchStart, { passive: true });
+    item.addEventListener('touchend', onItemTouchCancel);
+    item.addEventListener('touchmove', onItemTouchCancel, { passive: true });
   });
 }
 
-function onHandleTouchStart(e) {
-  e.preventDefault();
+function onItemTouchStart(e) {
   const item = e.target.closest('.task-item');
   if (!item) return;
+  // Don't trigger on checkbox or delete button
+  if (e.target.closest('.checkbox') || e.target.closest('.delete-btn')) return;
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    startTouchDrag(e, item);
+  }, LONG_PRESS_MS);
+}
+
+function onItemTouchCancel() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+}
+
+function startTouchDrag(e, item) {
   touchDragId = parseInt(item.dataset.id);
   touchDragEl = item;
   touchStartY = e.touches[0].clientY;
-
   item.classList.add('dragging');
-
+  // Haptic feedback if available
+  if (navigator.vibrate) navigator.vibrate(30);
   document.addEventListener('touchmove', onTouchMove, { passive: false });
   document.addEventListener('touchend', onTouchEnd);
 }
@@ -1664,6 +1679,8 @@ function onTouchEnd(e) {
 
   document.querySelectorAll('.task-item').forEach(x => x.classList.remove('dragging', 'drag-over'));
   touchDragEl = null; touchDragId = null;
+  // Assign sortOrder based on current array position
+  tasks.forEach((t, i) => t.sortOrder = i);
   render();
 }
 
@@ -1688,6 +1705,7 @@ function dragDrop(e, targetId) {
   if (fromIdx < 0 || toIdx < 0) return;
   const [moved] = tasks.splice(fromIdx, 1);
   tasks.splice(toIdx, 0, moved);
+  tasks.forEach((t, i) => t.sortOrder = i);
   save(); render();
 }
 function dragEnd(e) {
@@ -1876,7 +1894,7 @@ async function initSheet() {
     sheetId = created.spreadsheetId;
     localStorage.setItem('wtt_sheetid', sheetId);
     await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A1:K1?valueInputOption=RAW`, {
-      values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt','tag']]
+      values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt','tag','sortOrder']]
     });
     await pushAllTasksToSheet();
 
@@ -1919,7 +1937,7 @@ async function initSheet() {
 
 async function mergeWithSheet() {
   updateSyncUI('syncing', 'Syncing...');
-  const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:L?majorDimension=ROWS`);
+  const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:M?majorDimension=ROWS`);
   const rows = data?.values || [];
 
   // Parse sheet tasks
@@ -1935,7 +1953,8 @@ async function mergeWithSheet() {
     createdAt: parseInt(r[8]) || Date.now(),
     completedAt: r[9] ? parseInt(r[9]) : null,
     updatedAt: parseInt(r[10]) || 0,
-    tag: r[11] || null
+    tag: r[11] || null,
+    sortOrder: parseInt(r[12]) || parseInt(r[8]) || 0
   }));
 
   // Strategy:
@@ -1968,7 +1987,11 @@ async function mergeWithSheet() {
     finalTasks.push({ ...t, updatedAt: t.updatedAt || t.createdAt });
   }
 
-  tasks = finalTasks.sort((a,b) => b.createdAt - a.createdAt);
+  // Sort by sortOrder if available, fall back to createdAt desc
+  tasks = finalTasks.sort((a,b) => {
+    if (a.sortOrder && b.sortOrder) return a.sortOrder - b.sortOrder;
+    return b.createdAt - a.createdAt;
+  });
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
 
@@ -1993,7 +2016,7 @@ async function mergeWithSheet() {
 async function pushAllTasksToSheet() {
   if (!sheetId || !isTokenValid()) return;
   // Clear data rows then rewrite
-  await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:L:clear`, {});
+  await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M:clear`, {});
   if (tasks.length === 0) return;
   const rows = tasks.map(t => [
     t.id, t.text, t.category||'work',
@@ -2001,9 +2024,10 @@ async function pushAllTasksToSheet() {
     t.priority||'medium', t.scheduledDate||'',
     t.notes||'', t.createdAt||'', t.completedAt||'',
     t.updatedAt || t.createdAt || Date.now(),
-    t.tag||''
+    t.tag||'',
+    t.sortOrder ?? t.createdAt
   ]);
-  await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:L?valueInputOption=RAW`, { values: rows });
+  await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:M?valueInputOption=RAW`, { values: rows });
 }
 
 async function syncTask(taskId) {

@@ -1239,8 +1239,6 @@ function clearDone() {
   tasks = tasks.filter(t=>!ids.includes(t.id)); save(); render();
 }
 
-function save() { localStorage.setItem('wtt_tasks', JSON.stringify(tasks)); }
-
 function selectPriority(p) {
   pendingPriority = p;
   document.querySelectorAll('.priority-pill').forEach(btn => {
@@ -1320,18 +1318,20 @@ async function saveModal() {
   if (t) {
     const oldNotes = t.notes || '';
     const oldPriority = t.priority;
-    // Rename — strip any old tag from text, then update
+    // Rename
     const newTitle = document.getElementById('modalTitleInput').value.trim();
     if (newTitle) t.text = newTitle.replace(/#[a-zA-Z0-9_-]+/g, '').trim() || newTitle;
-    // Tag — store separately and append to text for report grouping
-    const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/\s+/g, '-').toLowerCase();
+    // Tag
+    const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/[\s]+/g, '-').toLowerCase();
     t.tag = tagVal || null;
-    // Keep text clean — no # in title, tag stored separately
     t.notes = document.getElementById('notesArea').value.trim();
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
     t.updatedAt = Date.now();
-    save(); render();
+    // Save locally first, then sync — ensures tag is committed before sheet push
+    localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+    render();
+    if (sheetId && isTokenValid()) syncTask();
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
       const p = await detectPriority(combined, t.category);
@@ -1680,6 +1680,7 @@ let gUserId = localStorage.getItem('wtt_userid') || null;
 let sheetId = localStorage.getItem('wtt_sheetid') || null;
 let isSyncing = false;
 let syncDebounceTimer = null;
+let pendingLocalChanges = false; // true while waiting to push to sheet
 
 function isTokenValid() {
   return gAccessToken && Date.now() < gTokenExpiry - 60000;
@@ -1861,7 +1862,7 @@ async function initSheet() {
 
 async function mergeWithSheet() {
   updateSyncUI('syncing', 'Merging tasks...');
-  const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:K?majorDimension=ROWS`);
+  const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:L?majorDimension=ROWS`);
   const rows = data?.values || [];
 
   // Parse sheet tasks
@@ -1912,7 +1913,7 @@ async function mergeWithSheet() {
 async function pushAllTasksToSheet() {
   if (!sheetId || !isTokenValid()) return;
   // Clear data rows then rewrite
-  await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:K:clear`, {});
+  await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:L:clear`, {});
   if (tasks.length === 0) return;
   const rows = tasks.map(t => [
     t.id, t.text, t.category||'work',
@@ -1923,6 +1924,7 @@ async function pushAllTasksToSheet() {
     t.tag||''
   ]);
   await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:L?valueInputOption=RAW`, { values: rows });
+  pendingLocalChanges = false;
 }
 
 async function syncTask(taskId) {
@@ -1988,7 +1990,10 @@ function addSignOutButton() { renderSyncSettings(); }
 function save() {
   tasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt }));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
-  if (sheetId && isTokenValid()) syncTask();
+  if (sheetId && isTokenValid()) {
+    pendingLocalChanges = true;
+    syncTask();
+  }
 }
 
 // ── Client ID setup in settings ───────────────────────────────

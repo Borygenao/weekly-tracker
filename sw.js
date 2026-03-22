@@ -1,4 +1,4 @@
-const CACHE = 'weekly-v13';
+const CACHE = 'weekly-v14';
 const ASSETS = ['./', './index.html', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './manifest.json'];
 
 self.addEventListener('install', e => {

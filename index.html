@@ -1487,8 +1487,9 @@ function setFilterFromSelect(val) {
 function renderSyncSettings() {
   const row = document.getElementById('syncSettingsRow');
   if (!row) return;
-  if (gUserId && sheetId) {
-    row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>Synced · ${gUserId}</span></div><button class="btn-signout" onclick="googleSignOut()">Sign out</button>`;
+  if ((isTokenValid() || gUserId) && sheetId) {
+    const label = gUserId ? `Synced · ${gUserId}` : 'Synced';
+    row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>${label}</span></div><button class="btn-signout" onclick="googleSignOut()">Sign out</button>`;
   } else {
     row.innerHTML = `<div class="sync-status"><div class="sync-dot"></div><span>Not signed in</span></div>
     <button class="google-btn" onclick="googleSignIn()">
@@ -1514,8 +1515,8 @@ const SHEET_NAME = 'Weekly Tracker Task Database';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive';
 const PROXY = 'https://wtt-proxy.onrender.com';
 
-let gAccessToken = null;
-let gTokenExpiry = 0;
+let gAccessToken = localStorage.getItem('wtt_gtoken') || null;
+let gTokenExpiry = parseInt(localStorage.getItem('wtt_gexpiry') || '0');
 let gUserId = localStorage.getItem('wtt_userid') || null;
 let sheetId = localStorage.getItem('wtt_sheetid') || null;
 let isSyncing = false;
@@ -1525,30 +1526,9 @@ function isTokenValid() {
   return gAccessToken && Date.now() < gTokenExpiry - 60000;
 }
 
-// Get a valid token — first tries server (has refresh token), then falls back to Google popup
 async function getValidToken() {
   if (isTokenValid()) return true;
-
-  // If we have a userId, try the server first
-  if (gUserId) {
-    try {
-      const res = await fetch(PROXY + '/api/auth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: gUserId })
-      });
-      const data = await res.json();
-      if (data.access_token) {
-        gAccessToken = data.access_token;
-        gTokenExpiry = Date.now() + (data.expires_in * 1000);
-        return true;
-      }
-    } catch(e) {
-      console.log('Server token refresh failed:', e.message);
-    }
-  }
-
-  // Fallback: silent Google popup refresh
+  // Silent refresh via Google
   return new Promise((resolve) => {
     if (typeof google === 'undefined' || !google.accounts) { resolve(false); return; }
     try {
@@ -1556,10 +1536,13 @@ async function getValidToken() {
         client_id: GOOGLE_CLIENT_ID,
         scope: SCOPES,
         prompt: '',
+        hint: gUserId || '',
         callback: (resp) => {
           if (resp.error) { resolve(false); return; }
           gAccessToken = resp.access_token;
           gTokenExpiry = Date.now() + (resp.expires_in * 1000);
+          localStorage.setItem('wtt_gtoken', gAccessToken);
+          localStorage.setItem('wtt_gexpiry', String(gTokenExpiry));
           resolve(true);
         }
       });
@@ -1576,80 +1559,40 @@ function googleSignIn() {
     return;
   }
   try {
-    // Use authorization code flow to get refresh token
-    const client = google.accounts.oauth2.initCodeClient({
+    const client = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: SCOPES,
-      ux_mode: 'popup',
+      scope: SCOPES + ' email profile',
       callback: async (resp) => {
         if (resp.error) { console.error('Auth error:', resp); renderSyncSettings(); return; }
-        
-        // Get user email to use as userId
-        const tokenClient = google.accounts.oauth2.initTokenClient({
-          client_id: GOOGLE_CLIENT_ID,
-          scope: 'email profile',
-          prompt: '',
-          callback: async (tokenResp) => {
-            if (tokenResp.error) { renderSyncSettings(); return; }
-            
-            // Get user info
-            try {
-              const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-                headers: { 'Authorization': `Bearer ${tokenResp.access_token}` }
-              });
-              const userInfo = await userRes.json();
-              gUserId = userInfo.email;
-              localStorage.setItem('wtt_userid', gUserId);
-            } catch(e) {
-              gUserId = 'user_' + Date.now();
-              localStorage.setItem('wtt_userid', gUserId);
-            }
-
-            // Send auth code to server to exchange for refresh token
-            try {
-              const storeRes = await fetch(PROXY + '/api/auth/store', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: resp.code, userId: gUserId })
-              });
-              const storeData = await storeRes.json();
-              if (storeData.access_token) {
-                gAccessToken = storeData.access_token;
-                gTokenExpiry = Date.now() + (storeData.expires_in * 1000);
-              } else {
-                // Fallback to token from tokenClient
-                gAccessToken = tokenResp.access_token;
-                gTokenExpiry = Date.now() + (tokenResp.expires_in * 1000);
-              }
-            } catch(e) {
-              gAccessToken = tokenResp.access_token;
-              gTokenExpiry = Date.now() + (tokenResp.expires_in * 1000);
-            }
-
-            updateSyncUI('syncing', '');
-            renderSyncSettings();
-            await initSheet();
-          }
-        });
-        tokenClient.requestAccessToken({ prompt: '' });
+        gAccessToken = resp.access_token;
+        gTokenExpiry = Date.now() + (resp.expires_in * 1000);
+        localStorage.setItem('wtt_gtoken', gAccessToken);
+        localStorage.setItem('wtt_gexpiry', String(gTokenExpiry));
+        // Get user email for hint on future silent refreshes
+        try {
+          const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { 'Authorization': `Bearer ${gAccessToken}` }
+          });
+          const userInfo = await userRes.json();
+          gUserId = userInfo.email || null;
+          if (gUserId) localStorage.setItem('wtt_userid', gUserId);
+        } catch(e) {}
+        updateSyncUI('syncing', '');
+        renderSyncSettings();
+        await initSheet();
       }
     });
-    client.requestCode();
+    client.requestAccessToken();
   } catch(e) {
     console.error('Sign in error:', e);
     renderSyncSettings();
   }
 }
 
-async function googleSignOut() {
-  if (gUserId) {
-    fetch(PROXY + '/api/auth/signout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: gUserId })
-    }).catch(() => {});
-  }
+function googleSignOut() {
   gAccessToken = null; gTokenExpiry = 0; gUserId = null; sheetId = null;
+  localStorage.removeItem('wtt_gtoken');
+  localStorage.removeItem('wtt_gexpiry');
   localStorage.removeItem('wtt_userid');
   localStorage.removeItem('wtt_sheetid');
   updateSyncUI('off', '');
@@ -1851,8 +1794,8 @@ function updateSyncUI(state, text) {
 
 async function initGoogleSync() {
   renderSyncSettings();
-  if (sheetId && gUserId) {
-    const valid = await getValidToken();
+  if (sheetId && (isTokenValid() || gUserId)) {
+    const valid = isTokenValid() || await getValidToken();
     if (valid) {
       updateSyncUI('syncing', '');
       await mergeWithSheet();

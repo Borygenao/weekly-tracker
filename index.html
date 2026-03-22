@@ -1864,9 +1864,6 @@ async function mergeWithSheet() {
   const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:K?majorDimension=ROWS`);
   const rows = data?.values || [];
 
-  console.log('DEBUG sheet rows:', rows.length);
-  rows.forEach((r,i) => console.log(`DEBUG row ${i}: id=${r[0]} text=${r[1]?.substring(0,20)} notes="${r[7]}" updatedAt=${r[10]}`));
-
   // Parse sheet tasks
   const sheetTasks = rows.filter(r => r[0]).map(r => ({
     id: parseInt(r[0]) || Date.now(),
@@ -1883,28 +1880,30 @@ async function mergeWithSheet() {
     tag: r[11] || null
   }));
 
-  console.log('DEBUG local tasks:', tasks.length);
-  tasks.forEach(t => console.log(`DEBUG local: id=${t.id} notes="${t.notes}" updatedAt=${t.updatedAt}`));
-
   // Merge: sheet wins unless local is strictly newer
+  // Special rule: never overwrite a tag with null — keep whichever has a value
   const merged = new Map();
   for (const t of sheetTasks) merged.set(t.id, t);
   for (const t of tasks) {
     const sheetVersion = merged.get(t.id);
     if (!sheetVersion) {
+      // Only in local — add it
       merged.set(t.id, { ...t, updatedAt: t.updatedAt || t.createdAt });
     } else {
       const localTime = t.updatedAt || t.createdAt || 0;
       const sheetTime = sheetVersion.updatedAt || sheetVersion.createdAt || 0;
-      console.log(`DEBUG merge id=${t.id}: localTime=${localTime} sheetTime=${sheetTime} sheetNotes="${sheetVersion.notes}" localNotes="${t.notes}"`);
       if (localTime > sheetTime) {
         merged.set(t.id, { ...t, updatedAt: localTime });
+      } else {
+        // Sheet wins — but preserve local tag if sheet has none
+        if (!sheetVersion.tag && t.tag) {
+          merged.set(t.id, { ...sheetVersion, tag: t.tag });
+        }
       }
     }
   }
 
   tasks = Array.from(merged.values()).sort((a,b) => b.createdAt - a.createdAt);
-  console.log('DEBUG after merge:', tasks.map(t => `id=${t.id} notes="${t.notes}"`));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
   await pushAllTasksToSheet();

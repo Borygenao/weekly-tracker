@@ -377,6 +377,20 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .time-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'Space Mono',monospace; font-size:11px; padding:5px 8px; border-radius:7px; outline:none; width:90px; }
 .time-input:focus { border-color:var(--accent); }
 
+/* ── Archive ── */
+.archive-sheet { background:#1a1a1a; border-radius:20px 20px 0 0; width:100%; max-width:540px; max-height:85vh; display:flex; flex-direction:column; padding:12px 18px 32px; }
+.archive-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.archive-search { width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'Space Mono',monospace; font-size:12px; padding:10px 12px; border-radius:8px; outline:none; margin-bottom:14px; }
+.archive-search:focus { border-color:var(--accent); }
+.archive-body { overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch; }
+.archive-group { margin-bottom:18px; }
+.archive-date-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.archive-count { background:var(--border); color:var(--muted); font-size:9px; padding:1px 5px; border-radius:99px; }
+.archive-item { padding:10px 0; border-bottom:1px solid var(--border); }
+.archive-item:last-child { border-bottom:none; }
+.archive-item-text { font-size:14px; color:var(--muted); text-decoration:line-through; margin-bottom:4px; }
+.archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
+
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 </style>
@@ -510,7 +524,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
   <!-- Bottom bar -->
   <div class="bottom-bar">
-    <button class="clear-btn" id="clearBtn" onclick="clearDone()">Clear completed</button>
+    <button class="clear-btn" id="clearBtn" onclick="clearDone()">Archive completed</button>
+    <button class="clear-btn" onclick="toggleArchive()" style="border-color:rgba(124,156,255,.3);color:var(--work);">📦 Archive</button>
   </div>
 
   <!-- Report panel -->
@@ -544,6 +559,19 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
       <button class="report-action-btn" onclick="runReport()">⚡ Generate</button>
       <button class="report-action-btn" id="copyReportBtn" onclick="copyReport()" style="display:none">Copy as Markdown</button>
     </div>
+  </div>
+</div>
+
+<!-- Archive Overlay -->
+<div class="modal-overlay" id="archiveOverlay" onclick="handleArchiveOverlayClick(event)" style="align-items:flex-end;">
+  <div class="archive-sheet">
+    <div class="modal-drag"></div>
+    <div class="archive-header">
+      <div class="report-title">// archive</div>
+      <button class="modal-close" onclick="toggleArchive()">×</button>
+    </div>
+    <input class="archive-search" id="archiveSearch" type="text" placeholder="Search archived tasks..." oninput="renderArchive(archiveData)">
+    <div class="archive-body" id="archiveBody"></div>
   </div>
 </div>
 
@@ -1315,9 +1343,15 @@ function toggleTask(id) {
 
 function deleteTask(id) { tasks = tasks.filter(t=>t.id!==id); save(); render(); }
 
-function clearDone() {
-  const ids = tasks.filter(t=>t.done&&!t.blocked&&(category==='all'||t.category===category)).map(t=>t.id);
-  tasks = tasks.filter(t=>!ids.includes(t.id)); save(); render();
+async function clearDone() {
+  const toArchive = tasks.filter(t => t.done && !t.blocked && (category==='all' || t.category===category));
+  if (toArchive.length === 0) return;
+  tasks = tasks.filter(t => !toArchive.find(a => a.id === t.id));
+  save();
+  render();
+  pushIfConnected();
+  // Archive to sheet (fire and forget)
+  archiveTasks(toArchive).catch(() => {});
 }
 
 function selectPriority(p) {
@@ -2237,21 +2271,130 @@ function renderCalendar() {
 }
 
 // ── Monthly data cleanup ─────────────────────────────────────
-function cleanOldMonthTasks() {
-  const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const lastClean = localStorage.getItem('wtt_lastclean') || '';
-  if (lastClean === currentMonthKey) return;
-  // Remove done tasks from previous months
-  const before = tasks.length;
-  tasks = tasks.filter(t => {
-    if (!t.done || !t.completedAt) return true;
-    const d = new Date(t.completedAt);
-    const taskMonth = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    return taskMonth === currentMonthKey;
+
+
+function handleArchiveOverlayClick(e) {
+  if (e.target === document.getElementById('archiveOverlay')) toggleArchive();
+}
+
+// ── Archive ────────────────────────────────────────────────────
+const ARCHIVE_TAB = 'Archive';
+
+async function ensureArchiveTab() {
+  if (!sheetId || !isTokenValid()) return false;
+  // Check if Archive tab exists
+  const meta = await sheetsRequest('GET', `/${sheetId}?fields=sheets.properties.title`);
+  const exists = meta?.sheets?.some(s => s.properties.title === ARCHIVE_TAB);
+  if (!exists) {
+    // Create Archive tab
+    await sheetsRequest('POST', `/${sheetId}:batchUpdate`, {
+      requests: [{ addSheet: { properties: { title: ARCHIVE_TAB } } }]
+    });
+    // Add headers
+    await sheetsRequest('PUT', `/${sheetId}/values/${ARCHIVE_TAB}!A1:O1?valueInputOption=RAW`, {
+      values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt','tag','sortOrder','archivedAt','archivedDate']]
+    });
+  }
+  return true;
+}
+
+async function archiveTasks(taskList) {
+  if (!sheetId || !isTokenValid() || !taskList.length) return;
+  const ok = await ensureArchiveTab();
+  if (!ok) return;
+  const now = Date.now();
+  const nowDate = toDateKey(new Date());
+  const rows = taskList.map(t => [
+    t.id, t.text, t.category||'work',
+    t.done?'true':'false', t.blocked?'true':'false',
+    t.priority||'medium', t.scheduledDate||'',
+    t.notes||'', t.createdAt||'', t.completedAt||'',
+    t.updatedAt||'', t.tag||'', t.sortOrder||'',
+    now, nowDate
+  ]);
+  await sheetsRequest('POST', `/${sheetId}/values/${ARCHIVE_TAB}!A:O:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
+    values: rows
   });
-  if (tasks.length !== before) { save(); render(); }
-  localStorage.setItem('wtt_lastclean', currentMonthKey);
+  showSyncIndicator(`✓ ${taskList.length} task${taskList.length!==1?'s':''} archived`);
+}
+
+async function loadArchive() {
+  if (!sheetId || !isTokenValid()) return [];
+  const ok = await ensureArchiveTab();
+  if (!ok) return [];
+  const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
+  const rows = data?.values || [];
+  return rows.filter(r => r[0]).map(r => ({
+    id: parseInt(r[0]),
+    text: r[1] || '',
+    category: r[2] || 'work',
+    done: true,
+    priority: r[5] || 'medium',
+    scheduledDate: r[6] || null,
+    notes: r[7] || '',
+    createdAt: parseInt(r[8]) || 0,
+    completedAt: r[9] ? parseInt(r[9]) : null,
+    tag: r[11] || null,
+    archivedAt: parseInt(r[13]) || 0,
+    archivedDate: r[14] || ''
+  })).sort((a,b) => b.archivedAt - a.archivedAt);
+}
+
+// ── Archive View ──────────────────────────────────────────────
+let archiveOpen = false;
+let archiveData = [];
+
+async function toggleArchive() {
+  archiveOpen = !archiveOpen;
+  const overlay = document.getElementById('archiveOverlay');
+  overlay.classList.toggle('open', archiveOpen);
+  document.body.style.overflow = archiveOpen ? 'hidden' : '';
+  if (archiveOpen) {
+    document.getElementById('archiveBody').innerHTML = '<div class="report-generating">Loading archive...</div>';
+    archiveData = await loadArchive();
+    renderArchive(archiveData);
+  }
+}
+
+function renderArchive(data) {
+  const body = document.getElementById('archiveBody');
+  const search = document.getElementById('archiveSearch').value.toLowerCase();
+  const filtered = search ? data.filter(t =>
+    t.text.toLowerCase().includes(search) ||
+    (t.notes||'').toLowerCase().includes(search) ||
+    (t.tag||'').toLowerCase().includes(search)
+  ) : data;
+
+  if (filtered.length === 0) {
+    body.innerHTML = `<div class="report-generating">${search ? 'No results.' : 'No archived tasks yet.'}</div>`;
+    return;
+  }
+
+  // Group by archivedDate
+  const groups = new Map();
+  for (const t of filtered) {
+    const key = t.archivedDate || 'Unknown';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+
+  let html = '';
+  for (const [date, items] of groups) {
+    const d = new Date(date + 'T00:00:00');
+    const label = isNaN(d) ? date : d.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' });
+    html += `<div class="archive-group">
+      <div class="archive-date-label">${label} <span class="archive-count">${items.length}</span></div>
+      ${items.map(t => `<div class="archive-item">
+        <div class="archive-item-text">${escapeHtml(t.text)}</div>
+        <div class="task-meta">
+          <span class="cat-badge ${t.category}">${t.category}</span>
+          ${t.tag ? `<span class="task-tag-badge">#${escapeHtml(t.tag)}</span>` : ''}
+          ${t.notes ? `<span class="archive-notes">${escapeHtml(t.notes)}</span>` : ''}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+  body.innerHTML = html;
 }
 
 // ── Tag autocomplete ──────────────────────────────────────────
@@ -2442,7 +2585,6 @@ function checkAllDone() {
 // ── Init ───────────────────────────────────────────────────────
 initAIStatus();
 render();
-cleanOldMonthTasks();
 window.addEventListener('load', () => {
   initATH();
   setTimeout(initGoogleSync, 1000);

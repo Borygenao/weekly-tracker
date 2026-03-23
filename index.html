@@ -1404,9 +1404,8 @@ async function saveModal() {
     // Tag
     const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/[\s]+/g, '-').toLowerCase();
     t.tag = tagVal || null;
-    // Notes — never overwrite existing notes with empty (protects against cross-device wipe)
-    const newNotes = document.getElementById('notesArea').value.trim();
-    if (newNotes || !t.notes) t.notes = newNotes;
+    // Notes — always save what the user typed (they intentionally cleared it)
+    t.notes = document.getElementById('notesArea').value.trim();
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
     t.updatedAt = Date.now();
@@ -2000,12 +1999,13 @@ async function mergeWithSheet() {
   // Build final task list: all sheet tasks + local-only tasks
   const finalTasks = [...sheetTasks];
 
-  // For sheet tasks, patch in local tag/notes only if sheet column is empty
+  // For sheet tasks, patch in local tag only if sheet column is empty
+  // Notes: sheet is always truth — if user deleted a note it was already pushed to sheet
   for (const sheetTask of finalTasks) {
     const localVersion = tasks.find(t => t.id === sheetTask.id);
     if (localVersion) {
       if (!sheetTask.tag && localVersion.tag) sheetTask.tag = localVersion.tag;
-      if (!sheetTask.notes && localVersion.notes) sheetTask.notes = localVersion.notes;
+      // Do NOT patch notes from local — sheet is source of truth for notes
     }
   }
 

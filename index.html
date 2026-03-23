@@ -1287,6 +1287,7 @@ async function addTask() {
   const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:id };
   tasks.unshift(task); taskInput.value = '';
   save(); render();
+  pushIfConnected(); // push new task to sheet immediately
   // Auto-open modal so user can set tag, schedule, priority
   openModal(id);
   // Detect priority in background
@@ -1409,13 +1410,9 @@ async function saveModal() {
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
     t.updatedAt = Date.now();
-    // Save locally first, then push immediately (no debounce) to ensure changes hit sheet
     localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
     render();
-    if (sheetId && isTokenValid()) {
-      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-      pushAllTasksToSheet(); // immediate push, no 800ms wait
-    }
+    pushIfConnected(); // push on save
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
       const p = await detectPriority(combined, t.category);
@@ -2027,14 +2024,11 @@ async function mergeWithSheet() {
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   render();
 
-  // If modal is open, refresh its content with latest data from sheet
+  // If modal is open, refresh tag from sheet if local was empty
   if (activeTaskId) {
     const t = tasks.find(t => t.id === activeTaskId);
     if (t) {
-      // Only update fields if they have data in sheet but were empty in modal
-      const notesArea = document.getElementById('notesArea');
       const tagInputEl = document.getElementById('tagInput');
-      if (notesArea && t.notes && !notesArea.value.trim()) notesArea.value = t.notes;
       if (tagInputEl && t.tag && !tagInputEl.value.trim()) tagInputEl.value = t.tag;
     }
   }
@@ -2064,20 +2058,7 @@ async function pushAllTasksToSheet() {
   isPushing = false;
 }
 
-async function syncTask(taskId) {
-  // Debounce rapid edits
-  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-  syncDebounceTimer = setTimeout(async () => {
-    if (!sheetId || !isTokenValid()) return;
-    isSyncing = true;
-    updateSyncUI('syncing', 'Syncing...');
-    await pushAllTasksToSheet();
-    isSyncing = false;
-    updateSyncUI('on', '');
-    renderSyncSettings();
-    showSyncIndicator('✓ Synced');
-  }, 800);
-}
+
 
 function showSyncIndicator(msg) {
   const el = document.getElementById('syncIndicator');
@@ -2091,8 +2072,6 @@ function updateSyncUI(state, text) {
   // dot/text elements only exist when settings is open — safe to ignore here
 }
 
-let lastSyncTime = 0;
-
 async function initGoogleSync() {
   renderSyncSettings();
   if (sheetId && (isTokenValid() || gUserId)) {
@@ -2100,7 +2079,6 @@ async function initGoogleSync() {
     if (valid) {
       updateSyncUI('syncing', '');
       await mergeWithSheet();
-      lastSyncTime = Date.now();
       updateSyncUI('on', '');
       renderSyncSettings();
       showSyncIndicator('✓ Connected');
@@ -2111,27 +2089,31 @@ async function initGoogleSync() {
   }
 }
 
-// Proactively refresh token every 45 min so it never expires during use
+// Refresh token every 45 min — token only, no sync
 let keepaliveTimer = null;
 function startTokenKeepalive() {
   if (keepaliveTimer) clearInterval(keepaliveTimer);
   keepaliveTimer = setInterval(async () => {
-    if (!sheetId) return;
     if (!isTokenValid()) {
       await getValidToken();
       renderSyncSettings();
     }
-  }, 45 * 60 * 1000); // every 45 minutes
+  }, 45 * 60 * 1000);
 }
 
 function addSignOutButton() { renderSyncSettings(); }
 
-// save() — persists locally and triggers sheet sync
+// save() — persists locally only (sheet push happens in saveModal/addTask/background)
 function save() {
   tasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt }));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+}
+
+// pushIfConnected — call explicitly when user takes an action
+function pushIfConnected() {
   if (sheetId && isTokenValid()) {
-    syncTask();
+    if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(() => pushAllTasksToSheet(), 500);
   }
 }
 
@@ -2499,18 +2481,12 @@ function dismissATH() {
 // ── Auto-refresh when app comes back to foreground ─────────────
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
-    render();
-    if (sheetId) {
-      const stale = Date.now() - lastSyncTime > 2 * 60 * 1000; // 2 minutes
-      if (stale) {
-        const valid = isTokenValid() || await getValidToken();
-        if (valid) {
-          renderSyncSettings();
-          mergeWithSheet().then(() => {
-            lastSyncTime = Date.now();
-          }).catch(() => {});
-        }
-      }
+    render(); // re-render day groupings only
+  }
+  // Push to sheet when app goes to background
+  if (document.visibilityState === 'hidden') {
+    if (sheetId && isTokenValid()) {
+      pushAllTasksToSheet().catch(() => {});
     }
   }
 });

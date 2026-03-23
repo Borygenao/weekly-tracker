@@ -1409,10 +1409,13 @@ async function saveModal() {
     t.scheduledDate = pendingScheduleDate;
     t.priority = pendingPriority;
     t.updatedAt = Date.now();
-    // Save locally first, then sync — ensures tag is committed before sheet push
+    // Save locally first, then push immediately (no debounce) to ensure changes hit sheet
     localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
     render();
-    if (sheetId && isTokenValid()) syncTask();
+    if (sheetId && isTokenValid()) {
+      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+      pushAllTasksToSheet(); // immediate push, no 800ms wait
+    }
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
       const p = await detectPriority(combined, t.category);
@@ -1781,6 +1784,7 @@ let gUserId = localStorage.getItem('wtt_userid') || null;
 let sheetId = localStorage.getItem('wtt_sheetid') || null;
 let isSyncing = false;
 let syncDebounceTimer = null;
+let isPushing = false; // true while pushAllTasksToSheet is running
 
 function isTokenValid() {
   return gAccessToken && Date.now() < gTokenExpiry - 60000;
@@ -1962,6 +1966,7 @@ async function initSheet() {
 }
 
 async function mergeWithSheet() {
+  if (isPushing) return; // don't read while we're writing
   updateSyncUI('syncing', 'Syncing...');
   const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:M?majorDimension=ROWS`);
   const rows = data?.values || [];
@@ -2042,6 +2047,7 @@ async function mergeWithSheet() {
 
 async function pushAllTasksToSheet() {
   if (!sheetId || !isTokenValid()) return;
+  isPushing = true;
   // Clear data rows then rewrite
   await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M:clear`, {});
   if (tasks.length === 0) return;
@@ -2055,6 +2061,7 @@ async function pushAllTasksToSheet() {
     t.sortOrder ?? t.createdAt
   ]);
   await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:M?valueInputOption=RAW`, { values: rows });
+  isPushing = false;
 }
 
 async function syncTask(taskId) {

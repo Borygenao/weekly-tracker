@@ -129,6 +129,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .bottom-bar { display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
 .clear-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; display:none; min-height:40px; }
 .clear-btn:hover { border-color:#ff5c5c; color:#ff5c5c; }
+.archive-btn { background:none; border:1px solid rgba(124,156,255,.3); color:var(--work); font-family:'Space Mono',monospace; font-size:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; min-height:40px; }
+.archive-btn:hover { background:rgba(124,156,255,.08); border-color:var(--work); }
 
 /* ── Report panel ── */
 .report-overlay { position:fixed; inset:0; z-index:400; pointer-events:none; }
@@ -347,7 +349,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .cal-day.today .cal-day-num { color:var(--accent); font-weight:700; }
 .cal-day-num { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); line-height:1; }
 .cal-day.other-month .cal-day-num { opacity:.2; }
-.cal-bar-wrap { width:4px; height:22px; background:var(--border); border-radius:99px; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; }
+.cal-bar-wrap { width:4px; height:22px; background:var(--border); border-radius:99px; overflow:hidden; display:flex; flex-direction:column; }
 .cal-bar-done { width:100%; background:var(--low); border-radius:99px; transition:height .3s ease; }
 .cal-bar-pending { width:100%; background:var(--muted2); border-radius:99px; }
 .cal-legend { display:flex; align-items:center; gap:6px; font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); justify-content:center; }
@@ -525,7 +527,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <!-- Bottom bar -->
   <div class="bottom-bar">
     <button class="clear-btn" id="clearBtn" onclick="clearDone()">Archive completed</button>
-    <button class="clear-btn" onclick="toggleArchive()" style="border-color:rgba(124,156,255,.3);color:var(--work);">📦 Archive</button>
+    <button class="archive-btn" onclick="toggleArchive()">📦 Archive</button>
   </div>
 
   <!-- Report panel -->
@@ -2247,10 +2249,10 @@ function renderCalendar() {
 
     let barHtml = '';
     if (total > 0) {
-      const doneH = Math.round((data.done / total) * 22);
-      const pendH = 22 - doneH;
+      const donePct = Math.round((data.done / total) * 100);
       barHtml = `<div class="cal-bar-wrap">
-        <div class="cal-bar-done" style="height:${doneH}px"></div>
+        <div class="cal-bar-pending" style="height:${100-donePct}%"></div>
+        <div class="cal-bar-done" style="height:${donePct}%"></div>
       </div>`;
     }
 

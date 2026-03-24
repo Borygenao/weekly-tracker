@@ -194,9 +194,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
 /* ── Task items — slimmer, cleaner ── */
 .task-list { display:flex; flex-direction:column; gap:6px; }
-.task-item { display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 13px; transition:border-color .15s, opacity .2s; cursor:pointer; -webkit-user-select:none; user-select:none; position:relative; }
+.task-item { display:flex; align-items:flex-start; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 12px; transition:border-color .15s, background .15s; cursor:pointer; -webkit-user-select:none; user-select:none; position:relative; min-height:56px; }
 .task-item:active { background:var(--surface2); }
-.task-item.done { opacity:.32; }
+.task-item.done { opacity:1; }
 .task-item.cat-work { border-left:3px solid rgba(124,156,255,.45); }
 .task-item.cat-personal { border-left:3px solid rgba(240,122,255,.45); }
 .task-item.blocked { border-left:3px solid rgba(255,92,92,.5) !important; }
@@ -216,9 +216,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .task-item.done .checkbox .icon-check { display:block; }
 .task-item.blocked .checkbox .icon-block { display:block; color:var(--high); font-size:12px; font-weight:700; }
 
-.task-body { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
-.task-text { font-size:14px; line-height:1.35; word-break:break-word; }
-.task-item.done .task-text { text-decoration:line-through; color:var(--muted); }
+.task-body { flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; padding-top:2px; }
+.task-text { font-size:14px; line-height:1.35; word-break:break-word; color:var(--text); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.task-item.done .task-text { text-decoration:none; color:rgba(244,244,244,.82); }
 .task-item.blocked .task-text { color:#ff8a8a; }
 .has-notes::after { content:'✦'; font-size:8px; color:var(--accent); margin-left:5px; vertical-align:middle; }
 .no-notes-work::after { content:'+ note'; font-size:8px; color:var(--muted2); margin-left:5px; vertical-align:middle; font-family:'Space Mono',monospace; }
@@ -234,14 +234,15 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .priority-badge.detecting { background:rgba(85,85,85,.15); color:var(--muted); }
 .task-tag-badge { font-family:'Space Mono',monospace; font-size:8px; color:var(--accent); background:rgba(200,241,53,.1); border:1px solid rgba(200,241,53,.25); padding:1px 5px; border-radius:99px; }
 .blocked-badge { font-family:'Space Mono',monospace; font-size:8px; font-weight:700; color:var(--high); background:rgba(255,92,92,.12); border:1px solid rgba(255,92,92,.25); padding:1px 5px; border-radius:99px; letter-spacing:.5px; }
-.timestamps { display:flex; flex-wrap:wrap; gap:6px; }
+.timestamps { display:none; }
 .timestamp { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); display:flex; align-items:center; gap:3px; }
 .timestamp .ts-label { color:var(--muted2); text-transform:uppercase; letter-spacing:1px; }
 .ts-done .ts-value { color:#7a9e1a; }
 .ts-done .ts-label { color:#3a5a1a; }
-.delete-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:18px; line-height:1; padding:4px 5px; border-radius:6px; opacity:0; transition:opacity .15s, color .15s; flex-shrink:0; min-width:28px; text-align:center; }
-.task-item:hover .delete-btn { opacity:1; }
-.delete-btn:hover { color:#ff5c5c; }
+.more-btn { width:36px; height:36px; border:none; background:transparent; color:var(--muted); border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:22px; line-height:1; margin:-2px -4px -2px 0; }
+.more-btn:active { background:rgba(255,255,255,.06); color:var(--text); }
+.more-btn svg { width:18px; height:18px; }
+.task-item.done .more-btn { color:rgba(244,244,244,.7); }
 
 /* ── Confirm delete overlay ── */
 .confirm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); display:flex; align-items:flex-end; justify-content:center; z-index:300; padding:20px; opacity:0; pointer-events:none; transition:opacity .2s; }
@@ -391,14 +392,29 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-item { padding:10px 0; border-bottom:1px solid var(--border); }
 .archive-item:last-child { border-bottom:none; }
 .archive-item-row { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
-.archive-item-text { font-size:14px; color:var(--muted); text-decoration:line-through; margin-bottom:4px; flex:1; }
-.archive-item-actions { display:flex; align-items:center; gap:8px; margin-left:10px; }
-.archive-action-btn { background:none; border:1px solid rgba(193,244,104,.25); color:var(--accent); font-family:'Space Mono',monospace; font-size:10px; padding:8px 10px; border-radius:8px; cursor:pointer; transition:all .2s; }
-.archive-action-btn:hover { background:rgba(193,244,104,.08); border-color:var(--accent); }
-.archive-action-btn.delete { border-color:rgba(255,107,107,.28); color:#ff9b9b; }
-.archive-action-btn.delete:hover { background:rgba(255,107,107,.08); border-color:#ff9b9b; }
+.archive-item-main { flex:1; min-width:0; }
+.archive-item-text { font-size:14px; color:var(--text); margin-bottom:6px; }
+.archive-item-actions { display:flex; align-items:center; gap:8px; margin-left:8px; }
+.archive-action-btn { background:none; border:none; color:var(--muted); width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer; }
+.archive-action-btn:active { background:rgba(255,255,255,.06); color:var(--text); }
+.archive-action-btn.delete { color:#ff9b9b; }
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
+
+/* ── Mobile action sheet ── */
+.action-sheet-overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); backdrop-filter:blur(4px); display:flex; align-items:flex-end; justify-content:center; z-index:320; opacity:0; pointer-events:none; transition:opacity .2s; }
+.action-sheet-overlay.open { opacity:1; pointer-events:all; }
+.action-sheet { background:#171717; border:1px solid var(--border); border-radius:22px 22px 0 0; width:100%; max-width:540px; padding:10px 16px 28px; transform:translateY(18px); transition:transform .22s ease; }
+.action-sheet-overlay.open .action-sheet { transform:translateY(0); }
+.action-sheet-handle { width:42px; height:4px; border-radius:999px; background:var(--border); margin:0 auto 12px; }
+.action-sheet-title { font-size:14px; line-height:1.4; margin-bottom:12px; color:var(--text); }
+.action-sheet-list { display:flex; flex-direction:column; gap:6px; }
+.action-sheet-btn { width:100%; border:none; background:transparent; color:var(--text); display:flex; align-items:center; gap:12px; text-align:left; padding:12px 8px; border-radius:12px; font-size:14px; min-height:48px; }
+.action-sheet-btn:active { background:rgba(255,255,255,.06); }
+.action-sheet-icon { width:24px; text-align:center; font-size:16px; color:var(--muted); }
+.action-sheet-btn.destructive .action-sheet-icon, .action-sheet-btn.destructive { color:#ff9b9b; }
+.action-sheet-cancel { margin-top:10px; width:100%; border:1px solid var(--border); background:transparent; color:var(--muted); border-radius:12px; min-height:48px; font-size:14px; }
+.action-sheet-cancel:active { color:var(--text); border-color:var(--text); }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
@@ -593,6 +609,16 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <input class="archive-search" id="archiveSearch" type="text" placeholder="Search archived tasks..." oninput="renderArchive(archiveData)">
     <div class="archive-body" id="archiveBody"></div>
     <div class="archive-note" id="archiveNote">Archived tasks are kept locally and synced to Google Sheets when connected.</div>
+  </div>
+</div>
+
+<!-- Action Sheet -->
+<div class="action-sheet-overlay" id="actionSheetOverlay" onclick="closeActionSheet(event)">
+  <div class="action-sheet" onclick="event.stopPropagation()">
+    <div class="action-sheet-handle"></div>
+    <div class="action-sheet-title" id="actionSheetTitle">Task actions</div>
+    <div class="action-sheet-list" id="actionSheetList"></div>
+    <button class="action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
   </div>
 </div>
 
@@ -1763,6 +1789,7 @@ function renderTask(t, isOverdue=false) {
   const stateClass = t.done ? 'done' : t.blocked ? 'blocked' : '';
   const overdueClass = isOverdue && !t.blocked ? ' overdue-item' : '';
   const blockedBadge = t.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
+  const doneBadge = t.done ? `<span class="cat-badge" style="background:rgba(200,241,53,.12);color:var(--accent);">done</span>` : '';
   return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" draggable="true" data-id="${t.id}"
       ondragstart="dragStart(event,${t.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${t.id})" ondragend="dragEnd(event)"
       onclick="openModal(${t.id})">
@@ -1776,17 +1803,71 @@ function renderTask(t, isOverdue=false) {
       <div class="task-text${noteClass}">${escapeHtml(t.text)}</div>
       <div class="task-meta">
         <span class="cat-badge ${cat}">${cat}</span>
+        ${doneBadge}
         ${blockedBadge}
         ${tagBadge}
         ${priorityHtml}
-        <div class="timestamps">
-          <div class="timestamp"><span class="ts-label">Added</span><span class="ts-value">${formatTime(t.createdAt||t.id)}</span></div>
-          ${t.done&&t.completedAt?`<div class="timestamp ts-done"><span class="ts-label">Done</span><span class="ts-value">${formatTime(t.completedAt)}</span></div>`:''}
-        </div>
       </div>
     </div>
-    <button class="delete-btn" onclick="event.stopPropagation();askDelete(${t.id})">×</button>
+    <button class="more-btn" aria-label="Task actions" onclick="event.stopPropagation();openTaskActions(${t.id})">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
+    </button>
   </div>`;
+}
+
+let actionSheetState = null;
+
+function openActionSheet(title, actions) {
+  actionSheetState = { title, actions };
+  const overlay = document.getElementById('actionSheetOverlay');
+  const titleEl = document.getElementById('actionSheetTitle');
+  const list = document.getElementById('actionSheetList');
+  titleEl.textContent = title;
+  list.innerHTML = actions.map((action, idx) => `
+    <button class="action-sheet-btn ${action.destructive ? 'destructive' : ''}" onclick="runActionSheetAction(${idx})">
+      <span class="action-sheet-icon">${action.icon || '•'}</span>
+      <span>${action.label}</span>
+    </button>
+  `).join('');
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeActionSheet(evt) {
+  if (evt && evt.target && evt.target !== evt.currentTarget) return;
+  document.getElementById('actionSheetOverlay').classList.remove('open');
+  if (!archiveOpen && !document.getElementById('confirmOverlay').classList.contains('open') && !document.getElementById('modalOverlay').classList.contains('open')) {
+    document.body.style.overflow = '';
+  }
+  actionSheetState = null;
+}
+
+function runActionSheetAction(index) {
+  if (!actionSheetState || !actionSheetState.actions[index]) return;
+  const action = actionSheetState.actions[index];
+  closeActionSheet();
+  try { action.handler(); } catch (e) { console.error(e); }
+}
+
+function openTaskActions(id) {
+  const t = tasks.find(task => task.id === id);
+  if (!t) return;
+  const actions = [
+    { icon: '✏️', label: 'Edit task', handler: () => openModal(id) },
+    { icon: t.done ? '↩️' : '✅', label: t.done ? 'Mark as not done' : 'Mark as done', handler: () => toggleTask(id) },
+    { icon: '🗑️', label: 'Delete task', destructive: true, handler: () => askDelete(id) }
+  ];
+  openActionSheet(t.text, actions);
+}
+
+function openArchiveActions(archiveKey) {
+  const item = archiveData.find(t => (t._archiveKey || String(t.id)) === String(archiveKey)) || getLocalArchiveCache().find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  if (!item) return;
+  openActionSheet(item.text, [
+    { icon: '🗓️', label: 'Edit done date', handler: () => editArchivedTaskDate(archiveKey) },
+    { icon: '↩️', label: 'Restore task', handler: () => restoreArchivedTask(archiveKey) },
+    { icon: '🗑️', label: 'Delete from archive', destructive: true, handler: () => deleteArchivedTask(archiveKey) }
+  ]);
 }
 
 // ── Confirm delete ─────────────────────────────────────────────
@@ -2814,18 +2895,19 @@ function renderArchive(data) {
         const archiveKey = encodeURIComponent(String(t._archiveKey || t.id));
         return `<div class="archive-item">
         <div class="archive-item-row">
-          <div style="flex:1;min-width:0">
+          <div class="archive-item-main">
             <div class="archive-item-text">${escapeHtml(t.text)}</div>
             <div class="task-meta">
               <span class="cat-badge ${t.category}">${t.category}</span>
               ${t.tag ? `<span class="task-tag-badge">#${escapeHtml(t.tag)}</span>` : ''}
+              <span class="cat-badge" style="background:rgba(200,241,53,.12);color:var(--accent);">done ${escapeHtml(date)}</span>
               ${t.notes ? `<span class="archive-notes">${escapeHtml(t.notes)}</span>` : ''}
             </div>
           </div>
           <div class="archive-item-actions">
-            <button class="archive-action-btn" onclick="editArchivedTaskDate(decodeURIComponent('${archiveKey}'))">Edit date</button>
-            <button class="archive-action-btn" onclick="restoreArchivedTask(decodeURIComponent('${archiveKey}'))">Restore</button>
-            <button class="archive-action-btn delete" onclick="deleteArchivedTask(decodeURIComponent('${archiveKey}'))">Delete</button>
+            <button class="archive-action-btn" aria-label="Archive actions" onclick="openArchiveActions(decodeURIComponent('${archiveKey}'))">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" aria-hidden="true"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
+            </button>
           </div>
         </div>
       </div>`;

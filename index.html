@@ -517,6 +517,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <option value="done">Done</option>
         <option value="blocked">Blocked</option>
       </select>
+      <select class="status-select" id="sortSelect" onchange="setSortFromSelect(this.value)" style="margin-left:6px;">
+        <option value="default">Default</option>
+        <option value="priority">Priority ↓</option>
+        <option value="date">Date ↑</option>
+      </select>
     </div>
   </div>
 
@@ -1079,12 +1084,25 @@ async function generateWeeklyReport() {
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const weekLabel = `${months[s.getMonth()]} ${s.getDate()} – ${months[e2.getMonth()]} ${e2.getDate()}`;
 
-  // Completed this week
+  // Completed this week — active tasks
   const completedWeek = workTasks.filter(t =>
     t.done && t.completedAt &&
     toDateKey(new Date(t.completedAt)) >= wStart &&
     toDateKey(new Date(t.completedAt)) <= wEnd
   );
+
+  // Include archived tasks from localStorage cache (always available, no sheet load needed)
+  const archiveCache = JSON.parse(localStorage.getItem('wtt_archivecache') || '[]');
+  const archivedThisWeek = archiveCache.filter(t =>
+    t.category === 'work' &&
+    t.archivedDate >= wStart && t.archivedDate <= wEnd
+  );
+  // Merge, avoid duplicates
+  const allCompleted = [...completedWeek];
+  for (const t of archivedThisWeek) {
+    if (!allCompleted.find(a => a.id === t.id)) allCompleted.push(t);
+  }
+
   const incomplete = workTasks.filter(t => !t.done);
 
   // ── Extract #tags from task text ──
@@ -1112,7 +1130,7 @@ async function generateWeeklyReport() {
 
   // ── Build grouped report ──
   function buildGroupedReport() {
-    const completedGroups = groupByTag(completedWeek);
+    const completedGroups = groupByTag(allCompleted);
     const incompleteGroups = groupByTag(incomplete);
 
     // Collect all unique tags across both
@@ -1130,7 +1148,7 @@ async function generateWeeklyReport() {
     if (!hasTags) {
       // Simple format — no tags
       const sections = [
-        { label:'Completed', mdLabel:'## Completed', items:completedWeek, fallback:'No tasks completed this week.' },
+        { label:'Completed', mdLabel:'## Completed', items:allCompleted, fallback:'No tasks completed this week.' },
         { label:'Incomplete', mdLabel:'## Incomplete', items:incomplete, fallback:'No incomplete tasks.' },
       ];
       for (const sec of sections) {
@@ -1194,7 +1212,7 @@ async function generateWeeklyReport() {
       html += `</div></div><hr class="report-divider">`;
 
       // Summary stats
-      const totalDone = completedWeek.length;
+      const totalDone = allCompleted.length;
       const totalLeft = incomplete.length;
       const totalBlocked = incomplete.filter(t=>t.blocked).length;
       md += `## Stats\n- Completed: ${totalDone}\n- Remaining: ${totalLeft}\n- Blocked: ${totalBlocked}\n\n`;
@@ -1226,7 +1244,7 @@ async function generateWeeklyReport() {
   try {
     const payload = {
       weekLabel,
-      completedThisWeek: completedWeek.map(t=>({task:t.text, notes:t.notes||'', priority:t.priority||''})),
+      completedThisWeek: allCompleted.map(t=>({task:t.text, notes:t.notes||'', priority:t.priority||''})),
       incomplete: incomplete.map(t=>({task:t.text, notes:t.notes||'', priority:t.priority||'', blocked:t.blocked||false})),
     };
 
@@ -1542,6 +1560,19 @@ function render() {
   const hasDone = catFiltered.some(t=>t.done);
   document.getElementById('clearBtn').style.display = hasDone?'inline-block':'none';
 
+  // Apply sort
+  const priorityOrder = { high:0, medium:1, low:2, detecting:3 };
+  if (sortMode === 'priority') {
+    visible.sort((a,b) => (priorityOrder[a.priority]??2) - (priorityOrder[b.priority]??2));
+  } else if (sortMode === 'date') {
+    visible.sort((a,b) => {
+      if (!a.scheduledDate && !b.scheduledDate) return 0;
+      if (!a.scheduledDate) return 1;
+      if (!b.scheduledDate) return -1;
+      return a.scheduledDate.localeCompare(b.scheduledDate);
+    });
+  }
+
   // Count hidden future tasks (scheduled beyond window, not done)
   const hiddenCount = catFiltered.filter(t => {
     const sd = t.scheduledDate;
@@ -1775,8 +1806,14 @@ function dragEnd(e) {
 }
 
 // ── Status dropdown ────────────────────────────────────────────
+let sortMode = 'default';
+
 function setFilterFromSelect(val) {
   filter = val; render();
+}
+
+function setSortFromSelect(val) {
+  sortMode = val; render();
 }
 
 // ── Sync settings UI ──────────────────────────────────────────
@@ -2215,7 +2252,6 @@ function renderCalendar() {
   const workTasks = tasks.filter(t => t.category === 'work');
 
   for (const t of workTasks) {
-    // Count by scheduledDate
     const key = t.scheduledDate;
     if (key) {
       if (!taskMap[key]) taskMap[key] = { done:0, pending:0, blocked:0 };
@@ -2223,13 +2259,18 @@ function renderCalendar() {
       else if (t.blocked) taskMap[key].blocked++;
       else taskMap[key].pending++;
     }
-    // Also count completed tasks by completedAt date
     if (t.done && t.completedAt) {
       const ck = toDateKey(new Date(t.completedAt));
       if (!taskMap[ck]) taskMap[ck] = { done:0, pending:0, blocked:0 };
-      // already counted above if scheduledDate matches — avoid double count
       if (ck !== t.scheduledDate) taskMap[ck].done++;
     }
+  }
+
+  // Merge in archived task counts from localStorage
+  const calArchive = JSON.parse(localStorage.getItem('wtt_calarchive') || '{}');
+  for (const [dateKey, data] of Object.entries(calArchive)) {
+    if (!taskMap[dateKey]) taskMap[dateKey] = { done:0, pending:0, blocked:0 };
+    taskMap[dateKey].done += data.done || 0;
   }
 
   let html = '';
@@ -2301,7 +2342,18 @@ async function ensureArchiveTab() {
 }
 
 async function archiveTasks(taskList) {
-  if (!sheetId || !isTokenValid() || !taskList.length) return;
+  if (!taskList.length) return;
+
+  // Store archive counts locally for calendar (works offline too)
+  const calData = JSON.parse(localStorage.getItem('wtt_calarchive') || '{}');
+  for (const t of taskList) {
+    const dateKey = t.completedAt ? toDateKey(new Date(t.completedAt)) : toDateKey(new Date());
+    if (!calData[dateKey]) calData[dateKey] = { done: 0 };
+    if (t.category === 'work') calData[dateKey].done++;
+  }
+  localStorage.setItem('wtt_calarchive', JSON.stringify(calData));
+
+  if (!sheetId || !isTokenValid()) return;
   const ok = await ensureArchiveTab();
   if (!ok) return;
   const now = Date.now();
@@ -2326,7 +2378,7 @@ async function loadArchive() {
   if (!ok) return [];
   const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
   const rows = data?.values || [];
-  return rows.filter(r => r[0]).map(r => ({
+  const result = rows.filter(r => r[0]).map(r => ({
     id: parseInt(r[0]),
     text: r[1] || '',
     category: r[2] || 'work',
@@ -2340,6 +2392,9 @@ async function loadArchive() {
     archivedAt: parseInt(r[13]) || 0,
     archivedDate: r[14] || ''
   })).sort((a,b) => b.archivedAt - a.archivedAt);
+  // Update localStorage cache with full archive data
+  localStorage.setItem('wtt_archivecache', JSON.stringify(result));
+  return result;
 }
 
 // ── Archive View ──────────────────────────────────────────────

@@ -687,7 +687,45 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
 <script>
 // ── State ─────────────────────────────────────────────────────
-let tasks = JSON.parse(localStorage.getItem('wtt_tasks') || '[]');
+function generateTaskId() {
+  return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeTaskRecord(task = {}) {
+  const baseId = task.id == null || task.id === '' ? generateTaskId() : String(task.id);
+  const createdAt = parseInt(task.createdAt) || Date.now();
+  const updatedAt = parseInt(task.updatedAt) || createdAt;
+  const completedAt = task.completedAt ? parseInt(task.completedAt) : null;
+  const sortOrder = parseInt(task.sortOrder) || createdAt;
+  return {
+    id: baseId,
+    text: task.text || '',
+    done: task.done === true || task.done === 'true',
+    blocked: task.blocked === true || task.blocked === 'true',
+    category: task.category || 'work',
+    createdAt,
+    completedAt,
+    scheduledDate: task.scheduledDate || null,
+    priority: task.priority || 'medium',
+    notes: task.notes || '',
+    tag: task.tag || null,
+    updatedAt,
+    archivedAt: task.archivedAt ? parseInt(task.archivedAt) : null,
+    archivedDate: task.archivedDate || '',
+    sortOrder
+  };
+}
+
+function readLocalTasks() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('wtt_tasks') || '[]');
+    return Array.isArray(raw) ? raw.map(normalizeTaskRecord) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+let tasks = readLocalTasks();
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
 let settingsOpen = false, reportOpen = false;
@@ -748,6 +786,36 @@ function shortDay(d) {
 
 function shortDate(d) {
   return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+
+function persistTasksLocal() {
+  localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+}
+
+function reconcileActiveTasksWithArchive(archiveItems = null) {
+  const source = Array.isArray(archiveItems) ? archiveItems : getLocalArchiveCache();
+  const archivedIds = new Set(source.map(t => String(t.id)).filter(Boolean));
+  const before = tasks.length;
+  tasks = tasks.map(normalizeTaskRecord).filter(t => !archivedIds.has(String(t.id)));
+  if (tasks.length !== before) persistTasksLocal();
+  return before - tasks.length;
+}
+
+function migrateExistingTaskIds() {
+  const before = JSON.stringify(tasks);
+  tasks = tasks.map(normalizeTaskRecord);
+  persistTasksLocal();
+  try {
+    const archiveItems = JSON.parse(localStorage.getItem('wtt_archivecache') || '[]');
+    if (Array.isArray(archiveItems)) {
+      const normalizedArchive = archiveItems.map(normalizeTaskRecord);
+      localStorage.setItem('wtt_archivecache', JSON.stringify(normalizedArchive));
+      syncCalendarArchiveCache(normalizedArchive);
+      reconcileActiveTasksWithArchive(normalizedArchive);
+    }
+  } catch (_) {}
+  return before !== JSON.stringify(tasks);
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -1373,8 +1441,9 @@ function setFilter(f, btn) {
 // ── Task CRUD ──────────────────────────────────────────────────
 async function addTask() {
   const text = taskInput.value.trim(); if (!text) return;
-  const id = Date.now();
-  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:id };
+  const createdAt = Date.now();
+  const id = generateTaskId();
+  const task = normalizeTaskRecord({ id, text, done:false, category:newTaskCat, createdAt, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:createdAt, updatedAt:createdAt });
   tasks.unshift(task); taskInput.value = '';
   save(); render();
   pushIfConnected('add-task'); // push new task to sheet immediately
@@ -2147,8 +2216,8 @@ async function mergeWithSheet() {
   const rows = data?.values || [];
   const tombstones = getTombstones();
 
-  const sheetTasks = rows.filter(r => r[0]).map(r => ({
-    id: parseInt(r[0]) || Date.now(),
+  const sheetTasks = rows.filter(r => r[0]).map(r => normalizeTaskRecord({
+    id: r[0],
     text: r[1] || '',
     category: r[2] || 'work',
     done: r[3] === 'true',
@@ -2156,14 +2225,14 @@ async function mergeWithSheet() {
     priority: r[5] || 'medium',
     scheduledDate: r[6] || null,
     notes: r[7] || '',
-    createdAt: parseInt(r[8]) || Date.now(),
-    completedAt: r[9] ? parseInt(r[9]) : null,
-    updatedAt: parseInt(r[10]) || parseInt(r[8]) || 0,
+    createdAt: r[8] || Date.now(),
+    completedAt: r[9] || null,
+    updatedAt: r[10] || r[8] || 0,
     tag: r[11] || null,
-    sortOrder: parseInt(r[12]) || parseInt(r[8]) || 0
+    sortOrder: r[12] || r[8] || 0
   })).filter(t => !(tombstones[String(t.id)] && tombstones[String(t.id)] >= (t.updatedAt || 0)));
 
-  const localTasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt || 0 }));
+  const localTasks = tasks.map(t => normalizeTaskRecord({ ...t, updatedAt: t.updatedAt || t.createdAt || 0 }));
   const finalMap = new Map();
 
   for (const t of sheetTasks) finalMap.set(t.id, t);
@@ -2174,12 +2243,13 @@ async function mergeWithSheet() {
     }
   }
 
-  tasks = [...finalMap.values()].sort((a,b) => {
+  tasks = [...finalMap.values()].map(normalizeTaskRecord).sort((a,b) => {
     if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
     return b.createdAt - a.createdAt;
   });
+  reconcileActiveTasksWithArchive();
 
-  localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+  persistTasksLocal();
   clearTombstonesForActiveTasks();
   render();
 
@@ -2308,8 +2378,8 @@ function addSignOutButton() { renderSyncSettings(); }
 
 // save() — persists locally only (sheet push happens in saveModal/addTask/background)
 function save() {
-  tasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt }));
-  localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+  tasks = tasks.map(t => normalizeTaskRecord({ ...t, updatedAt: t.updatedAt || t.createdAt }));
+  persistTasksLocal();
   updateArchiveButton();
 }
 
@@ -2481,11 +2551,17 @@ async function ensureArchiveTab() {
 }
 
 function getLocalArchiveCache() {
-  return JSON.parse(localStorage.getItem('wtt_archivecache') || '[]');
+  try {
+    const raw = JSON.parse(localStorage.getItem('wtt_archivecache') || '[]');
+    return Array.isArray(raw) ? raw.map(item => ({ ...item, ...normalizeTaskRecord(item) })) : [];
+  } catch (_) {
+    return [];
+  }
 }
 
 function setLocalArchiveCache(items) {
-  localStorage.setItem('wtt_archivecache', JSON.stringify(items));
+  const normalized = (items || []).map(item => ({ ...item, ...normalizeTaskRecord(item) }));
+  localStorage.setItem('wtt_archivecache', JSON.stringify(normalized));
 }
 
 function syncCalendarArchiveCache(items) {
@@ -2538,7 +2614,7 @@ async function archiveTasks(taskList) {
   }));
 
   const existing = getLocalArchiveCache();
-  const deduped = [...archiveEntries, ...existing.filter(old => !archiveEntries.some(entry => entry.id === old.id))]
+  const deduped = [...archiveEntries, ...existing.filter(old => !archiveEntries.some(entry => String(entry.id) === String(old.id)))]
     .sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
   setLocalArchiveCache(deduped);
   syncCalendarArchiveCache(deduped);
@@ -2565,7 +2641,10 @@ async function archiveTasks(taskList) {
 
 async function loadArchive() {
   const fallback = getLocalArchiveCache();
-  if (!sheetId || !isTokenValid()) return fallback;
+  if (!sheetId || !isTokenValid()) {
+    reconcileActiveTasksWithArchive(fallback);
+    return fallback;
+  }
   const ok = await ensureArchiveTab();
   if (!ok) return fallback;
   const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
@@ -2573,24 +2652,27 @@ async function loadArchive() {
   const result = rows.map((r, idx) => ({
     _rowIndex: idx + 2,
     _archiveKey: `${r[0] || 'x'}:${r[13] || '0'}:${idx + 2}`,
-    id: parseInt(r[0]) || Date.now() + idx,
-    text: r[1] || '',
-    category: r[2] || 'work',
-    done: true,
-    blocked: r[4] === 'true',
-    priority: r[5] || 'medium',
-    scheduledDate: r[6] || null,
-    notes: r[7] || '',
-    createdAt: parseInt(r[8]) || 0,
-    completedAt: r[9] ? parseInt(r[9]) : null,
-    updatedAt: r[10] ? parseInt(r[10]) : null,
-    tag: r[11] || null,
-    sortOrder: parseInt(r[12]) || 0,
-    archivedAt: parseInt(r[13]) || 0,
-    archivedDate: r[14] || ''
-  })).filter(t => t.text || t.id).sort((a,b) => b.archivedAt - a.archivedAt);
+    ...normalizeTaskRecord({
+      id: r[0] || generateTaskId(),
+      text: r[1] || '',
+      category: r[2] || 'work',
+      done: true,
+      blocked: r[4] === 'true',
+      priority: r[5] || 'medium',
+      scheduledDate: r[6] || null,
+      notes: r[7] || '',
+      createdAt: r[8] || 0,
+      completedAt: r[9] || null,
+      updatedAt: r[10] || null,
+      tag: r[11] || null,
+      sortOrder: r[12] || 0,
+      archivedAt: r[13] || 0,
+      archivedDate: r[14] || ''
+    })
+  })).filter(t => t.text || t.id).sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
   setLocalArchiveCache(result);
   syncCalendarArchiveCache(result);
+  reconcileActiveTasksWithArchive(result);
   return result.length ? result : fallback;
 }
 
@@ -2598,21 +2680,22 @@ async function restoreArchivedTask(archiveKey) {
   const cached = getLocalArchiveCache();
   const task = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
   if (!task) return;
-  tasks.unshift({
-    id: Date.now(),
+  const now = Date.now();
+  tasks.unshift(normalizeTaskRecord({
+    id: generateTaskId(),
     text: task.text,
     done: false,
     blocked: false,
     category: task.category || 'work',
-    createdAt: Date.now(),
+    createdAt: now,
     completedAt: null,
     scheduledDate: task.scheduledDate || null,
     priority: task.priority || 'medium',
     notes: task.notes || '',
     tag: task.tag || null,
-    updatedAt: Date.now(),
-    sortOrder: Date.now()
-  });
+    updatedAt: now,
+    sortOrder: now
+  }));
   const remaining = cached.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
   setLocalArchiveCache(remaining);
   syncCalendarArchiveCache(remaining);
@@ -2938,6 +3021,7 @@ function checkAllDone() {
 }
 
 // ── Init ───────────────────────────────────────────────────────
+migrateExistingTaskIds();
 render();
 window.addEventListener('load', async () => {
   initAIStatus();

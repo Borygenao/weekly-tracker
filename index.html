@@ -1868,7 +1868,7 @@ function setSortFromSelect(val) {
 }
 
 // ── Sync settings UI ──────────────────────────────────────────
-function renderSyncSettings() {
+async function renderSyncSettings() {
   const row = document.getElementById('syncSettingsRow');
   if (!row) return;
   refreshLastSyncUI();
@@ -1923,7 +1923,7 @@ function refreshLastSyncUI() {
     : 'Last synced: not yet';
 }
 
-function setLastSynced(ts, source = 'sync') {
+async function setLastSynced(ts, source = 'sync') {
   localStorage.setItem('wtt_last_synced_at', String(ts || Date.now()));
   localStorage.setItem('wtt_last_sync_source', source);
   refreshLastSyncUI();

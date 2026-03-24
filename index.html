@@ -109,6 +109,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .cat-select-btn.personal .dot { background:var(--personal); }
 .cat-select-btn.active.work { border-color:var(--work); color:var(--work); background:rgba(124,156,255,.08); }
 .cat-select-btn.active.personal { border-color:var(--personal); color:var(--personal); background:rgba(240,122,255,.08); }
+.status-filter-row { display:flex; gap:8px; width:100%; align-items:center; flex-wrap:wrap; }
+.status-segmented { display:flex; gap:6px; flex:1 1 100%; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+.status-filter-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:8px 12px; border-radius:999px; cursor:pointer; transition:all .2s; white-space:nowrap; min-height:36px; }
+.status-filter-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(200,241,53,.08); }
+.status-select.sort-only { flex:0 0 auto; min-width:110px; }
 
 /* ── Day groups ── */
 .day-group { margin-bottom:24px; }
@@ -539,17 +544,17 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <span class="task-options-label">Add to:</span>
     <button class="cat-select-btn work active" id="selWork" onclick="selectCat('work')"><div class="dot"></div>Work</button>
     <button class="cat-select-btn personal" id="selPersonal" onclick="selectCat('personal')"><div class="dot"></div>Personal</button>
-    <div class="status-dropdown-wrap">
-      <select class="status-select" id="statusSelect" onchange="setFilterFromSelect(this.value)">
-        <option value="all">All</option>
-        <option value="active">Active</option>
-        <option value="done">Done</option>
-        <option value="blocked">Blocked</option>
-      </select>
-      <select class="status-select" id="sortSelect" onchange="setSortFromSelect(this.value)" style="margin-left:6px;">
-        <option value="default">Default</option>
-        <option value="priority">Priority ↓</option>
-        <option value="date">Date ↑</option>
+    <div class="status-filter-row">
+      <div class="status-segmented" role="tablist" aria-label="Task status filter">
+        <button class="status-filter-btn active" id="filterBtnAll" onclick="setFilterButton('all', this)">All</button>
+        <button class="status-filter-btn" id="filterBtnActive" onclick="setFilterButton('active', this)">Pending</button>
+        <button class="status-filter-btn" id="filterBtnDone" onclick="setFilterButton('done', this)">Done</button>
+        <button class="status-filter-btn" id="filterBtnBlocked" onclick="setFilterButton('blocked', this)">Blocked</button>
+      </div>
+      <select class="status-select sort-only" id="sortSelect" onchange="setSortFromSelect(this.value)">
+        <option value="default">Sort: Default</option>
+        <option value="priority">Sort: Priority</option>
+        <option value="date">Sort: Date</option>
       </select>
     </div>
   </div>
@@ -1448,6 +1453,7 @@ function setCategory(cat, btn) {
   document.querySelectorAll('.cat-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); render();
   updateArchiveButton();
+  syncFilterButtons();
   renderCalendar();
 }
 
@@ -2006,15 +2012,31 @@ function dragEnd(e) {
   document.querySelectorAll('.task-item').forEach(x => x.classList.remove('dragging', 'drag-over'));
 }
 
-// ── Status dropdown ────────────────────────────────────────────
+// ── Status filter controls ─────────────────────────────────────
 let sortMode = 'default';
 
+function syncFilterButtons() {
+  const map = { all:'filterBtnAll', active:'filterBtnActive', done:'filterBtnDone', blocked:'filterBtnBlocked' };
+  document.querySelectorAll('.status-filter-btn').forEach(b => b.classList.remove('active'));
+  const activeBtn = document.getElementById(map[filter] || 'filterBtnAll');
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
+function setFilterButton(val, btn) {
+  filter = val;
+  syncFilterButtons();
+  render();
+}
+
 function setFilterFromSelect(val) {
-  filter = val; render();
+  filter = val;
+  syncFilterButtons();
+  render();
 }
 
 function setSortFromSelect(val) {
-  sortMode = val; render();
+  sortMode = val;
+  render();
 }
 
 // ── Sync settings UI ──────────────────────────────────────────

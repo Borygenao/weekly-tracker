@@ -395,8 +395,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-item-actions { display:flex; align-items:center; gap:8px; margin-left:10px; }
 .archive-action-btn { background:none; border:1px solid rgba(193,244,104,.25); color:var(--accent); font-family:'Space Mono',monospace; font-size:10px; padding:8px 10px; border-radius:8px; cursor:pointer; transition:all .2s; }
 .archive-action-btn:hover { background:rgba(193,244,104,.08); border-color:var(--accent); }
-.archive-action-btn.delete { border-color:rgba(255,107,107,.28); color:#ff9b9b; }
-.archive-action-btn.delete:hover { background:rgba(255,107,107,.08); border-color:#ff9b9b; }
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
 
@@ -466,14 +464,14 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <div class="panel-inner">
       <div class="panel-title">// settings</div>
       <div>
-        <div class="settings-label">AI / API Connection</div>
+        <div class="settings-label">Claude AI</div>
         <div class="ai-status"><div class="ai-status-dot on" id="aiStatusDot"></div><span id="aiStatusText">Connected via server</span></div>
         <div class="settings-hint" style="margin-top:4px">Your API key is stored securely on the server.</div>
         <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
-          <input type="url" id="proxyUrlInput" class="time-input" style="flex:1;min-width:0" placeholder="https://your-api-proxy.example.com">
+          <input type="url" id="proxyUrlInput" class="time-input" style="flex:1;min-width:0" placeholder="https://your-claude-proxy.example.com">
           <button class="btn-sm" onclick="saveProxyUrl()">Save</button>
         </div>
-        <div class="settings-hint" style="margin-top:6px">Used for AI requests and connection checks.</div>
+        <div class="settings-hint" style="margin-top:6px">Used for Claude requests and connection checks.</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
         <div class="settings-label">Google Sync</div>
@@ -1354,7 +1352,6 @@ function setCategory(cat, btn) {
   document.querySelectorAll('.cat-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); render();
   updateArchiveButton();
-  renderCalendar();
 }
 
 function selectCat(cat) {
@@ -1872,8 +1869,6 @@ function renderSyncSettings() {
   const row = document.getElementById('syncSettingsRow');
   if (!row) return;
   refreshLastSyncUI();
-  archiveData = await loadArchive().catch(() => getLocalArchiveCache());
-  renderCalendar();
   if ((isTokenValid() || gUserId) && sheetId) {
     const label = gUserId ? `Synced · ${gUserId}` : 'Synced';
     row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>${label}</span></div><button class="btn-sm" onclick="syncNow()">Sync now</button><button class="btn-signout" onclick="googleSignOut()">Sign out</button>`;
@@ -1927,8 +1922,6 @@ function setLastSynced(ts, source = 'sync') {
   localStorage.setItem('wtt_last_synced_at', String(ts || Date.now()));
   localStorage.setItem('wtt_last_sync_source', source);
   refreshLastSyncUI();
-  archiveData = await loadArchive().catch(() => getLocalArchiveCache());
-  renderCalendar();
 }
 
 function announceSync(reason = 'sync') {
@@ -2221,9 +2214,10 @@ async function refreshFromSource(reason = 'manual') {
   await mergeWithSheet();
   setLastSynced(Date.now(), reason);
   renderSyncSettings();
-  archiveData = await loadArchive();
-  if (archiveOpen) renderArchive(archiveData);
-  renderCalendar();
+  if (archiveOpen) {
+    archiveData = await loadArchive();
+    renderArchive(archiveData);
+  }
   return true;
 }
 
@@ -2244,9 +2238,10 @@ async function runFullSync(reason = 'manual', options = {}) {
       showSyncIndicator('✓ Synced');
     }
     renderSyncSettings();
-    archiveData = await loadArchive();
-    if (archiveOpen) renderArchive(archiveData);
-    renderCalendar();
+    if (archiveOpen) {
+      archiveData = await loadArchive();
+      renderArchive(archiveData);
+    }
     return wrote;
   })().finally(() => { syncPromise = null; });
   return syncPromise;
@@ -2488,46 +2483,10 @@ function setLocalArchiveCache(items) {
   localStorage.setItem('wtt_archivecache', JSON.stringify(items));
 }
 
-function syncCalendarArchiveCache(items) {
-  const calData = {};
-  for (const t of items) {
-    if (t.category !== 'work') continue;
-    const dateKey = t.archivedDate || (t.archivedAt ? toDateKey(new Date(t.archivedAt)) : null);
-    if (!dateKey) continue;
-    if (!calData[dateKey]) calData[dateKey] = { done: 0 };
-    calData[dateKey].done += 1;
-  }
-  localStorage.setItem('wtt_calarchive', JSON.stringify(calData));
-  return calData;
-}
-
-function archiveEntryToRow(t) {
-  return [
-    t.id, t.text, t.category||'work',
-    t.done?'true':'false', t.blocked?'true':'false',
-    t.priority||'medium', t.scheduledDate||'',
-    t.notes||'', t.createdAt||'', t.completedAt||'',
-    t.updatedAt||'', t.tag||'', t.sortOrder||'',
-    t.archivedAt||'', t.archivedDate||''
-  ];
-}
-
-async function rewriteArchiveSheet(items) {
-  if (!sheetId || !isTokenValid()) return false;
-  const ok = await ensureArchiveTab();
-  if (!ok) return false;
-  await sheetsRequest('POST', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O:clear`, {});
-  if (items.length) {
-    await sheetsRequest('PUT', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?valueInputOption=RAW`, {
-      values: items.map(archiveEntryToRow)
-    });
-  }
-  return true;
-}
-
 async function archiveTasks(taskList) {
   if (!taskList.length) return;
 
+  const calData = JSON.parse(localStorage.getItem('wtt_calarchive') || '{}');
   const now = Date.now();
   const nowDate = toDateKey(new Date());
   const archiveEntries = taskList.map(t => ({
@@ -2537,11 +2496,17 @@ async function archiveTasks(taskList) {
     archivedDate: nowDate
   }));
 
+  for (const t of taskList) {
+    const dateKey = t.completedAt ? toDateKey(new Date(t.completedAt)) : toDateKey(new Date());
+    if (!calData[dateKey]) calData[dateKey] = { done: 0 };
+    if (t.category === 'work') calData[dateKey].done++;
+  }
+  localStorage.setItem('wtt_calarchive', JSON.stringify(calData));
+
   const existing = getLocalArchiveCache();
   const deduped = [...archiveEntries, ...existing.filter(old => !archiveEntries.some(entry => entry.id === old.id))]
     .sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
   setLocalArchiveCache(deduped);
-  syncCalendarArchiveCache(deduped);
 
   if (!sheetId || !isTokenValid()) {
     showSyncIndicator(`✓ ${taskList.length} task${taskList.length!==1?'s':''} archived locally`);
@@ -2570,14 +2535,12 @@ async function loadArchive() {
   if (!ok) return fallback;
   const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
   const rows = data?.values || [];
-  const result = rows.map((r, idx) => ({
-    _rowIndex: idx + 2,
-    _archiveKey: `${r[0] || 'x'}:${r[13] || '0'}:${idx + 2}`,
-    id: parseInt(r[0]) || Date.now() + idx,
+  const result = rows.filter(r => r[0]).map(r => ({
+    id: parseInt(r[0]),
     text: r[1] || '',
     category: r[2] || 'work',
     done: true,
-    blocked: r[4] === 'true',
+    blocked: false,
     priority: r[5] || 'medium',
     scheduledDate: r[6] || null,
     notes: r[7] || '',
@@ -2588,15 +2551,14 @@ async function loadArchive() {
     sortOrder: parseInt(r[12]) || 0,
     archivedAt: parseInt(r[13]) || 0,
     archivedDate: r[14] || ''
-  })).filter(t => t.text || t.id).sort((a,b) => b.archivedAt - a.archivedAt);
+  })).sort((a,b) => b.archivedAt - a.archivedAt);
   setLocalArchiveCache(result);
-  syncCalendarArchiveCache(result);
   return result.length ? result : fallback;
 }
 
-async function restoreArchivedTask(archiveKey) {
+function restoreArchivedTask(id) {
   const cached = getLocalArchiveCache();
-  const task = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  const task = cached.find(t => t.id === id);
   if (!task) return;
   tasks.unshift({
     id: Date.now(),
@@ -2613,33 +2575,13 @@ async function restoreArchivedTask(archiveKey) {
     updatedAt: Date.now(),
     sortOrder: Date.now()
   });
-  const remaining = cached.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
-  setLocalArchiveCache(remaining);
-  syncCalendarArchiveCache(remaining);
-  archiveData = archiveData.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
+  setLocalArchiveCache(cached.filter(t => t.id !== id));
+  archiveData = archiveData.filter(t => t.id !== id);
   save();
   render();
   renderArchive(archiveData);
-  if (sheetId && isTokenValid()) {
-    try { await rewriteArchiveSheet(remaining); } catch (_) {}
-  }
   pushIfConnected('restore-archive');
   showSyncIndicator('✓ Restored from archive');
-}
-
-async function deleteArchivedTask(archiveKey) {
-  const cached = getLocalArchiveCache();
-  const remaining = cached.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
-  if (remaining.length === cached.length) return;
-  setLocalArchiveCache(remaining);
-  syncCalendarArchiveCache(remaining);
-  archiveData = archiveData.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
-  render();
-  renderArchive(archiveData);
-  if (sheetId && isTokenValid()) {
-    try { await rewriteArchiveSheet(remaining); } catch (_) {}
-  }
-  showSyncIndicator('✓ Removed from archive');
 }
 
 // ── Archive View ──────────────────────────────────────────────
@@ -2903,8 +2845,6 @@ window.addEventListener('load', async () => {
   initAIStatus();
   initATH();
   refreshLastSyncUI();
-  archiveData = await loadArchive().catch(() => getLocalArchiveCache());
-  renderCalendar();
   setTimeout(initGoogleSync, 1000);
   setTimeout(initNotifications, 1500);
   schedulePeriodicSync();

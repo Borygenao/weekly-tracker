@@ -19,7 +19,7 @@ A mobile-first weekly task tracker with AI-powered daily and weekly reports, Goo
 
 ### 1. AI Proxy (Render.com)
 
-The app uses a proxy server to call the Gemini AI API securely.
+The app uses a proxy server to call the Claude API securely.
 
 1. Deploy the `wtt-proxy` repo to [Render.com](https://render.com) as a Web Service
 2. Add environment variable: `GEMINI_API_KEY` = your key from [Google AI Studio](https://aistudio.google.com)
@@ -48,10 +48,10 @@ The app installs as a PWA with a custom icon and runs fullscreen.
 
 - Vanilla HTML / CSS / JavaScript — no frameworks
 - Google Sheets API for sync
-- Gemini 2.0 Flash for AI features
+- Claude for AI features via the proxy server
 - Hosted on GitHub Pages
 - AI proxy hosted on Render.com
 
 ## AI Proxy
 
-The proxy server lives in a separate repo: `wtt-proxy`. It receives requests from the app, forwards them to the Gemini API with your key, and returns the response. Your API key never touches the browser.
+The proxy server lives in a separate repo: `wtt-proxy`. It receives requests from the app, forwards them to the Claude API with your key, and returns the response. Your API key never touches the browser.

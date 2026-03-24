@@ -390,7 +390,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-count { background:var(--border); color:var(--muted); font-size:9px; padding:1px 5px; border-radius:99px; }
 .archive-item { padding:10px 0; border-bottom:1px solid var(--border); }
 .archive-item:last-child { border-bottom:none; }
-.archive-item-text { font-size:14px; color:var(--muted); text-decoration:line-through; margin-bottom:4px; }
+.archive-item-row { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
+.archive-item-text { font-size:14px; color:var(--muted); text-decoration:line-through; margin-bottom:4px; flex:1; }
+.archive-item-actions { display:flex; align-items:center; gap:8px; margin-left:10px; }
+.archive-action-btn { background:none; border:1px solid rgba(193,244,104,.25); color:var(--accent); font-family:'Space Mono',monospace; font-size:10px; padding:8px 10px; border-radius:8px; cursor:pointer; transition:all .2s; }
+.archive-action-btn:hover { background:rgba(193,244,104,.08); border-color:var(--accent); }
+.archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
@@ -462,6 +467,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="settings-label">Claude AI</div>
         <div class="ai-status"><div class="ai-status-dot on" id="aiStatusDot"></div><span id="aiStatusText">Connected via server</span></div>
         <div class="settings-hint" style="margin-top:4px">Your API key is stored securely on the server.</div>
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+          <input type="url" id="proxyUrlInput" class="time-input" style="flex:1;min-width:0" placeholder="https://your-claude-proxy.example.com">
+          <button class="btn-sm" onclick="saveProxyUrl()">Save</button>
+        </div>
+        <div class="settings-hint" style="margin-top:6px">Used for Claude requests and connection checks.</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
         <div class="settings-label">Google Sync</div>
@@ -531,7 +541,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
   <!-- Bottom bar -->
   <div class="bottom-bar">
-    <button class="clear-btn" id="clearBtn" onclick="clearDone()">Archive completed</button>
+    <button class="clear-btn" id="clearBtn" onclick="clearDone()">Archive completed (0)</button>
     <button class="archive-btn" onclick="toggleArchive()">📦 Archive</button>
   </div>
 
@@ -579,6 +589,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     </div>
     <input class="archive-search" id="archiveSearch" type="text" placeholder="Search archived tasks..." oninput="renderArchive(archiveData)">
     <div class="archive-body" id="archiveBody"></div>
+    <div class="archive-note" id="archiveNote">Archived tasks are kept locally and synced to Google Sheets when connected.</div>
   </div>
 </div>
 
@@ -745,13 +756,34 @@ function toggleSettings() {
   }
 }
 
-function initAIStatus() {
-  document.getElementById('aiDot').style.display = 'block';
+function getProxyBaseUrl() {
+  return (localStorage.getItem('wtt_proxy') || 'https://wtt-proxy.onrender.com').replace(/\/+$/, '');
+}
+
+function setAIStatus(connected, text) {
+  const dot = document.getElementById('aiStatusDot');
+  const statusText = document.getElementById('aiStatusText');
+  const aiDot = document.getElementById('aiDot');
+  if (dot) dot.classList.toggle('on', !!connected);
+  if (statusText) statusText.textContent = text || (connected ? 'Connected via server' : 'Not connected');
+  if (aiDot) aiDot.style.display = connected ? 'block' : 'none';
+}
+
+async function initAIStatus() {
+  setAIStatus(false, 'Checking proxy...');
+  try {
+    const res = await fetch(getProxyBaseUrl() + '/', { method: 'GET' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error('Proxy unavailable');
+    setAIStatus(true, data.message || 'Connected via server');
+  } catch (err) {
+    setAIStatus(false, 'Proxy unavailable');
+  }
 }
 
 // ── Claude API ─────────────────────────────────────────────────
 async function claudeCall(prompt, maxTokens = 300) {
-  const proxyUrl = localStorage.getItem('wtt_proxy') || 'https://wtt-proxy.onrender.com';
+  const proxyUrl = getProxyBaseUrl();
   const res = await fetch(proxyUrl + '/api/claude', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1314,6 +1346,7 @@ function setCategory(cat, btn) {
   category = cat;
   document.querySelectorAll('.cat-tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); render();
+  updateArchiveButton();
 }
 
 function selectCat(cat) {
@@ -1326,6 +1359,7 @@ function setFilter(f, btn) {
   filter = f;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); render();
+  updateArchiveButton();
 }
 
 // ── Task CRUD ──────────────────────────────────────────────────
@@ -1993,7 +2027,7 @@ async function initSheet() {
     if (!created) return;
     sheetId = created.spreadsheetId;
     localStorage.setItem('wtt_sheetid', sheetId);
-    await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A1:K1?valueInputOption=RAW`, {
+    await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A1:M1?valueInputOption=RAW`, {
       values: [['id','text','category','done','blocked','priority','scheduledDate','notes','createdAt','completedAt','updatedAt','tag','sortOrder']]
     });
     await pushAllTasksToSheet();
@@ -2018,11 +2052,9 @@ async function initSheet() {
       }
     }
 
-    // Delete all duplicates except the best one
-    for (const file of files) {
-      if (file.id !== bestId) {
-        await driveRequest('DELETE', `/files/${file.id}`);
-      }
+    const duplicateCount = Math.max(files.length - 1, 0);
+    if (duplicateCount > 0) {
+      showSyncIndicator(`Using the fullest sheet (${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''} left untouched)`);
     }
 
     sheetId = bestId;
@@ -2180,6 +2212,16 @@ function addSignOutButton() { renderSyncSettings(); }
 function save() {
   tasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt }));
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+  updateArchiveButton();
+}
+
+function updateArchiveButton() {
+  const btn = document.getElementById('clearBtn');
+  if (!btn) return;
+  const count = tasks.filter(t => t.done && !t.blocked && (category === 'all' || t.category === category)).length;
+  btn.textContent = `Archive completed (${count})`;
+  btn.disabled = count === 0;
+  btn.style.opacity = count === 0 ? '.5' : '1';
 }
 
 // pushIfConnected — call explicitly when user takes an action
@@ -2200,7 +2242,9 @@ function saveProxyUrl() {
   el.value = val;
   const btn = document.querySelector('[onclick="saveProxyUrl()"]');
   if (btn) { btn.textContent = '✓ Saved'; setTimeout(() => btn.textContent = 'Save', 1500); }
+  initAIStatus();
 }
+
 
 
 
@@ -2341,11 +2385,27 @@ async function ensureArchiveTab() {
   return true;
 }
 
+function getLocalArchiveCache() {
+  return JSON.parse(localStorage.getItem('wtt_archivecache') || '[]');
+}
+
+function setLocalArchiveCache(items) {
+  localStorage.setItem('wtt_archivecache', JSON.stringify(items));
+}
+
 async function archiveTasks(taskList) {
   if (!taskList.length) return;
 
-  // Store archive counts locally for calendar (works offline too)
   const calData = JSON.parse(localStorage.getItem('wtt_calarchive') || '{}');
+  const now = Date.now();
+  const nowDate = toDateKey(new Date());
+  const archiveEntries = taskList.map(t => ({
+    ...t,
+    done: true,
+    archivedAt: now,
+    archivedDate: nowDate
+  }));
+
   for (const t of taskList) {
     const dateKey = t.completedAt ? toDateKey(new Date(t.completedAt)) : toDateKey(new Date());
     if (!calData[dateKey]) calData[dateKey] = { done: 0 };
@@ -2353,12 +2413,18 @@ async function archiveTasks(taskList) {
   }
   localStorage.setItem('wtt_calarchive', JSON.stringify(calData));
 
-  if (!sheetId || !isTokenValid()) return;
+  const existing = getLocalArchiveCache();
+  const deduped = [...archiveEntries, ...existing.filter(old => !archiveEntries.some(entry => entry.id === old.id))]
+    .sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  setLocalArchiveCache(deduped);
+
+  if (!sheetId || !isTokenValid()) {
+    showSyncIndicator(`✓ ${taskList.length} task${taskList.length!==1?'s':''} archived locally`);
+    return;
+  }
   const ok = await ensureArchiveTab();
   if (!ok) return;
-  const now = Date.now();
-  const nowDate = toDateKey(new Date());
-  const rows = taskList.map(t => [
+  const rows = archiveEntries.map(t => [
     t.id, t.text, t.category||'work',
     t.done?'true':'false', t.blocked?'true':'false',
     t.priority||'medium', t.scheduledDate||'',
@@ -2373,9 +2439,10 @@ async function archiveTasks(taskList) {
 }
 
 async function loadArchive() {
-  if (!sheetId || !isTokenValid()) return [];
+  const fallback = getLocalArchiveCache();
+  if (!sheetId || !isTokenValid()) return fallback;
   const ok = await ensureArchiveTab();
-  if (!ok) return [];
+  if (!ok) return fallback;
   const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
   const rows = data?.values || [];
   const result = rows.filter(r => r[0]).map(r => ({
@@ -2383,18 +2450,48 @@ async function loadArchive() {
     text: r[1] || '',
     category: r[2] || 'work',
     done: true,
+    blocked: false,
     priority: r[5] || 'medium',
     scheduledDate: r[6] || null,
     notes: r[7] || '',
     createdAt: parseInt(r[8]) || 0,
     completedAt: r[9] ? parseInt(r[9]) : null,
+    updatedAt: r[10] ? parseInt(r[10]) : null,
     tag: r[11] || null,
+    sortOrder: parseInt(r[12]) || 0,
     archivedAt: parseInt(r[13]) || 0,
     archivedDate: r[14] || ''
   })).sort((a,b) => b.archivedAt - a.archivedAt);
-  // Update localStorage cache with full archive data
-  localStorage.setItem('wtt_archivecache', JSON.stringify(result));
-  return result;
+  setLocalArchiveCache(result);
+  return result.length ? result : fallback;
+}
+
+function restoreArchivedTask(id) {
+  const cached = getLocalArchiveCache();
+  const task = cached.find(t => t.id === id);
+  if (!task) return;
+  tasks.unshift({
+    id: Date.now(),
+    text: task.text,
+    done: false,
+    blocked: false,
+    category: task.category || 'work',
+    createdAt: Date.now(),
+    completedAt: null,
+    scheduledDate: task.scheduledDate || null,
+    priority: task.priority || 'medium',
+    notes: task.notes || '',
+    tag: task.tag || null,
+    updatedAt: Date.now(),
+    sortOrder: Date.now()
+  });
+  setLocalArchiveCache(cached.filter(t => t.id !== id));
+  archiveData = archiveData.filter(t => t.id !== id);
+  save();
+  render();
+  renderArchive(archiveData);
+  pushIfConnected();
+  showSyncIndicator('✓ Restored from archive');
 }
 
 // ── Archive View ──────────────────────────────────────────────
@@ -2407,6 +2504,7 @@ async function toggleArchive() {
   overlay.classList.toggle('open', archiveOpen);
   document.body.style.overflow = archiveOpen ? 'hidden' : '';
   if (archiveOpen) {
+    document.getElementById('archiveSearch').value = '';
     document.getElementById('archiveBody').innerHTML = '<div class="report-generating">Loading archive...</div>';
     archiveData = await loadArchive();
     renderArchive(archiveData);
@@ -2421,6 +2519,11 @@ function renderArchive(data) {
     (t.notes||'').toLowerCase().includes(search) ||
     (t.tag||'').toLowerCase().includes(search)
   ) : data;
+
+  const note = document.getElementById('archiveNote');
+  if (note) note.textContent = sheetId && isTokenValid()
+    ? 'Archived tasks are synced to Google Sheets and cached locally for quick access.'
+    : 'Showing your local archive cache. Connect Google Sync to back it up to Sheets.';
 
   if (filtered.length === 0) {
     body.innerHTML = `<div class="report-generating">${search ? 'No results.' : 'No archived tasks yet.'}</div>`;
@@ -2442,11 +2545,18 @@ function renderArchive(data) {
     html += `<div class="archive-group">
       <div class="archive-date-label">${label} <span class="archive-count">${items.length}</span></div>
       ${items.map(t => `<div class="archive-item">
-        <div class="archive-item-text">${escapeHtml(t.text)}</div>
-        <div class="task-meta">
-          <span class="cat-badge ${t.category}">${t.category}</span>
-          ${t.tag ? `<span class="task-tag-badge">#${escapeHtml(t.tag)}</span>` : ''}
-          ${t.notes ? `<span class="archive-notes">${escapeHtml(t.notes)}</span>` : ''}
+        <div class="archive-item-row">
+          <div style="flex:1;min-width:0">
+            <div class="archive-item-text">${escapeHtml(t.text)}</div>
+            <div class="task-meta">
+              <span class="cat-badge ${t.category}">${t.category}</span>
+              ${t.tag ? `<span class="task-tag-badge">#${escapeHtml(t.tag)}</span>` : ''}
+              ${t.notes ? `<span class="archive-notes">${escapeHtml(t.notes)}</span>` : ''}
+            </div>
+          </div>
+          <div class="archive-item-actions">
+            <button class="archive-action-btn" onclick="restoreArchivedTask(${t.id})">Restore</button>
+          </div>
         </div>
       </div>`).join('')}
     </div>`;
@@ -2640,9 +2750,9 @@ function checkAllDone() {
 }
 
 // ── Init ───────────────────────────────────────────────────────
-initAIStatus();
 render();
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  initAIStatus();
   initATH();
   setTimeout(initGoogleSync, 1000);
   setTimeout(initNotifications, 1500);
@@ -2656,11 +2766,6 @@ window.addEventListener('load', () => {
       }
     }).catch(() => {});
   }
-  fetch('https://wtt-proxy.onrender.com/api/claude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 })
-  }).catch(() => {});
 });
 
 // ── Add to Home Screen ────────────────────────────────────────

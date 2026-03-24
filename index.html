@@ -2642,6 +2642,41 @@ async function deleteArchivedTask(archiveKey) {
   showSyncIndicator('✓ Removed from archive');
 }
 
+async function editArchivedTaskDate(archiveKey) {
+  const cached = getLocalArchiveCache();
+  const match = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  if (!match) return;
+  const initial = match.archivedDate || toDateKey(new Date(match.archivedAt || Date.now()));
+  const nextDate = window.prompt('Edit archive date (YYYY-MM-DD)', initial);
+  if (nextDate == null) return;
+  const trimmed = nextDate.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    alert('Please enter the date as YYYY-MM-DD.');
+    return;
+  }
+  const parsed = new Date(trimmed + 'T12:00:00');
+  if (Number.isNaN(parsed.getTime())) {
+    alert('That date is not valid.');
+    return;
+  }
+  const updated = cached.map(t => {
+    if ((t._archiveKey || String(t.id)) !== String(archiveKey)) return t;
+    return { ...t, archivedDate: trimmed, archivedAt: parsed.getTime() };
+  }).sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  setLocalArchiveCache(updated);
+  syncCalendarArchiveCache(updated);
+  archiveData = archiveData.map(t => {
+    if ((t._archiveKey || String(t.id)) !== String(archiveKey)) return t;
+    return { ...t, archivedDate: trimmed, archivedAt: parsed.getTime() };
+  }).sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  render();
+  renderArchive(archiveData);
+  if (sheetId && isTokenValid()) {
+    try { await rewriteArchiveSheet(updated); } catch (_) {}
+  }
+  showSyncIndicator('✓ Archive date updated');
+}
+
 // ── Archive View ──────────────────────────────────────────────
 let archiveOpen = false;
 let archiveData = [];
@@ -2692,7 +2727,9 @@ function renderArchive(data) {
     const label = isNaN(d) ? date : d.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric', year:'numeric' });
     html += `<div class="archive-group">
       <div class="archive-date-label">${label} <span class="archive-count">${items.length}</span></div>
-      ${items.map(t => `<div class="archive-item">
+      ${items.map(t => {
+        const archiveKey = encodeURIComponent(String(t._archiveKey || t.id));
+        return `<div class="archive-item">
         <div class="archive-item-row">
           <div style="flex:1;min-width:0">
             <div class="archive-item-text">${escapeHtml(t.text)}</div>
@@ -2703,10 +2740,13 @@ function renderArchive(data) {
             </div>
           </div>
           <div class="archive-item-actions">
-            <button class="archive-action-btn" onclick="restoreArchivedTask(${t.id})">Restore</button>
+            <button class="archive-action-btn" onclick="editArchivedTaskDate(decodeURIComponent('${archiveKey}'))">Edit date</button>
+            <button class="archive-action-btn" onclick="restoreArchivedTask(decodeURIComponent('${archiveKey}'))">Restore</button>
+            <button class="archive-action-btn delete" onclick="deleteArchivedTask(decodeURIComponent('${archiveKey}'))">Delete</button>
           </div>
         </div>
-      </div>`).join('')}
+      </div>`;
+      }).join('')}
     </div>`;
   }
   body.innerHTML = html;

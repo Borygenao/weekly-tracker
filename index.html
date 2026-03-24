@@ -478,6 +478,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="sync-settings-row" id="syncSettingsRow">
           <!-- populated by JS -->
         </div>
+        <div class="settings-hint" id="lastSyncText" style="margin-top:6px">Last synced: not yet</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
         <div class="settings-label">Notifications</div>
@@ -691,6 +692,10 @@ let settingsOpen = false, reportOpen = false;
 let reportText = '';
 let pendingScheduleDate = null;
 let pendingPriority = 'medium';
+const SYNC_POLL_MS = 60000;
+let syncPromise = null;
+let syncTimer = null;
+const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('wtt-sync') : null;
 
 const taskInput = document.getElementById('taskInput');
 taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
@@ -1369,13 +1374,13 @@ async function addTask() {
   const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:id };
   tasks.unshift(task); taskInput.value = '';
   save(); render();
-  pushIfConnected(); // push new task to sheet immediately
+  pushIfConnected('add-task'); // push new task to sheet immediately
   // Auto-open modal so user can set tag, schedule, priority
   openModal(id);
   // Detect priority in background
   const p = await detectPriority(text, newTaskCat);
   const t = tasks.find(t=>t.id===id);
-  if (t && t.priority === 'detecting') { t.priority = p||'medium'; save(); render(); }
+  if (t && t.priority === 'detecting') { t.priority = p||'medium'; save(); render(); pushIfConnected('priority-detect'); }
 }
 
 function toggleTask(id) {
@@ -1391,21 +1396,26 @@ function toggleTask(id) {
   render();
   requestAnimationFrame(() => {
     save();
+    pushIfConnected('toggle-task');
     if (t.done) checkAllDone();
   });
 }
 
-function deleteTask(id) { tasks = tasks.filter(t=>t.id!==id); save(); render(); }
+function deleteTask(id) { setTombstone(id, Date.now()); tasks = tasks.filter(t=>t.id!==id); save(); render(); pushIfConnected('delete-task'); }
 
 async function clearDone() {
   const toArchive = tasks.filter(t => t.done && !t.blocked && (category==='all' || t.category===category));
   if (toArchive.length === 0) return;
+  const stamp = Date.now();
+  toArchive.forEach(t => setTombstone(t.id, stamp));
   tasks = tasks.filter(t => !toArchive.find(a => a.id === t.id));
   save();
   render();
-  pushIfConnected();
-  // Archive to sheet (fire and forget)
-  archiveTasks(toArchive).catch(() => {});
+  if (sheetId && isTokenValid()) {
+    await runFullSync('archive-completed', { archiveList: toArchive });
+  } else {
+    archiveTasks(toArchive).catch(() => {});
+  }
 }
 
 function selectPriority(p) {
@@ -1500,11 +1510,11 @@ async function saveModal() {
     t.updatedAt = Date.now();
     localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
     render();
-    pushIfConnected(); // push on save
+    pushIfConnected('save-modal'); // push on save
     if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
       const combined = `${t.text}. ${t.notes}`;
       const p = await detectPriority(combined, t.category);
-      if (p) { t.priority = p; t.updatedAt = Date.now(); save(); render(); }
+      if (p) { t.priority = p; t.updatedAt = Date.now(); save(); render(); pushIfConnected('priority-detect'); }
     }
   }
   closeModal();
@@ -1724,7 +1734,8 @@ function closeConfirm() {
 function confirmDelete() {
   if (!pendingDeleteId) return;
   tasks = tasks.filter(t=>t.id!==pendingDeleteId);
-  save(); render(); closeConfirm();
+  setTombstone(pendingDeleteId, Date.now());
+  save(); render(); pushIfConnected('delete-task'); closeConfirm();
 }
 
 // ── Drag to reorder ────────────────────────────────────────────
@@ -1807,7 +1818,9 @@ function onTouchEnd(e) {
   touchDragEl = null; touchDragId = null;
   // Assign sortOrder based on current array position
   tasks.forEach((t, i) => t.sortOrder = i);
+  save();
   render();
+  pushIfConnected('touch-reorder');
 }
 
 // Desktop drag (mouse)
@@ -1833,6 +1846,7 @@ function dragDrop(e, targetId) {
   tasks.splice(toIdx, 0, moved);
   tasks.forEach((t, i) => t.sortOrder = i);
   save(); render();
+  pushIfConnected('reorder');
 }
 function dragEnd(e) {
   dragId = null;
@@ -1854,9 +1868,10 @@ function setSortFromSelect(val) {
 function renderSyncSettings() {
   const row = document.getElementById('syncSettingsRow');
   if (!row) return;
+  refreshLastSyncUI();
   if ((isTokenValid() || gUserId) && sheetId) {
     const label = gUserId ? `Synced · ${gUserId}` : 'Synced';
-    row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>${label}</span></div><button class="btn-signout" onclick="googleSignOut()">Sign out</button>`;
+    row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>${label}</span></div><button class="btn-sm" onclick="syncNow()">Sync now</button><button class="btn-signout" onclick="googleSignOut()">Sign out</button>`;
   } else {
     row.innerHTML = `<div class="sync-status"><div class="sync-dot"></div><span>Not signed in</span></div>
     <button class="google-btn" onclick="googleSignIn()">
@@ -1873,6 +1888,54 @@ function formatTime(ts) {
 }
 
 function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function getTombstones() {
+  try { return JSON.parse(localStorage.getItem('wtt_tombstones') || '{}'); } catch (_) { return {}; }
+}
+
+function setTombstone(id, ts = Date.now()) {
+  const data = getTombstones();
+  data[String(id)] = ts;
+  const entries = Object.entries(data).sort((a,b) => b[1] - a[1]).slice(0, 500);
+  localStorage.setItem('wtt_tombstones', JSON.stringify(Object.fromEntries(entries)));
+}
+
+function clearTombstonesForActiveTasks() {
+  const data = getTombstones();
+  let changed = false;
+  for (const t of tasks) {
+    if (data[String(t.id)]) { delete data[String(t.id)]; changed = true; }
+  }
+  if (changed) localStorage.setItem('wtt_tombstones', JSON.stringify(data));
+}
+
+function refreshLastSyncUI() {
+  const el = document.getElementById('lastSyncText');
+  if (!el) return;
+  const ts = parseInt(localStorage.getItem('wtt_last_synced_at') || '0');
+  el.textContent = ts
+    ? `Last synced: ${new Date(ts).toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })}`
+    : 'Last synced: not yet';
+}
+
+function setLastSynced(ts, source = 'sync') {
+  localStorage.setItem('wtt_last_synced_at', String(ts || Date.now()));
+  localStorage.setItem('wtt_last_sync_source', source);
+  refreshLastSyncUI();
+}
+
+function announceSync(reason = 'sync') {
+  const payload = JSON.stringify({ at: Date.now(), reason });
+  localStorage.setItem('wtt_sync_ping', payload);
+  try { syncChannel?.postMessage({ type: 'SYNC_PING', reason, at: Date.now() }); } catch (_) {}
+}
+
+function schedulePeriodicSync() {
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshFromSource('interval').catch(() => {});
+  }, SYNC_POLL_MS);
+}
 
 // ── Google Sheets Sync ────────────────────────────────────────
 // SETUP: Replace with your OAuth Client ID from Google Cloud Console
@@ -1974,6 +2037,7 @@ async function sheetsRequest(method, path, body) {
   const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
     method,
     headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
     body: body ? JSON.stringify(body) : undefined
   });
   if (res.status === 401) {
@@ -1983,6 +2047,7 @@ async function sheetsRequest(method, path, body) {
     const retry = await fetch(`https://sheets.googleapis.com/v4/spreadsheets${path}`, {
       method,
       headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
+      cache: 'no-store',
       body: body ? JSON.stringify(body) : undefined
     });
     if (!retry.ok) return null;
@@ -2001,6 +2066,7 @@ async function driveRequest(method, path, body) {
   const res = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
     method,
     headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
     body: body ? JSON.stringify(body) : undefined
   });
   if (!res.ok) return null;
@@ -2068,12 +2134,12 @@ async function initSheet() {
 }
 
 async function mergeWithSheet() {
-  if (isPushing) return; // don't read while we're writing
+  if (isPushing) return;
   updateSyncUI('syncing', 'Syncing...');
   const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:M?majorDimension=ROWS`);
   const rows = data?.values || [];
+  const tombstones = getTombstones();
 
-  // Parse sheet tasks
   const sheetTasks = rows.filter(r => r[0]).map(r => ({
     id: parseInt(r[0]) || Date.now(),
     text: r[1] || '',
@@ -2085,51 +2151,31 @@ async function mergeWithSheet() {
     notes: r[7] || '',
     createdAt: parseInt(r[8]) || Date.now(),
     completedAt: r[9] ? parseInt(r[9]) : null,
-    updatedAt: parseInt(r[10]) || 0,
+    updatedAt: parseInt(r[10]) || parseInt(r[8]) || 0,
     tag: r[11] || null,
     sortOrder: parseInt(r[12]) || parseInt(r[8]) || 0
-  }));
+  })).filter(t => !(tombstones[String(t.id)] && tombstones[String(t.id)] >= (t.updatedAt || 0)));
 
-  // Strategy:
-  // 1. Sheet is the source of truth for all fields
-  // 2. Only bring in local tasks that DON'T exist in sheet (added while offline)
-  // 3. For tasks that exist in both: sheet wins ALWAYS
-  //    Exception: if local has a tag/notes and sheet doesn't — keep local value
-  //    (handles case where sheet column was empty before feature was added)
+  const localTasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt || 0 }));
+  const finalMap = new Map();
 
-  const sheetMap = new Map();
-  for (const t of sheetTasks) sheetMap.set(t.id, t);
-
-  // Find local-only tasks (added offline)
-  const localOnlyTasks = tasks.filter(t => !sheetMap.has(t.id));
-
-  // Build final task list: all sheet tasks + local-only tasks
-  const finalTasks = [...sheetTasks];
-
-  // For sheet tasks, patch in local tag only if sheet column is empty
-  // Notes: sheet is always truth — if user deleted a note it was already pushed to sheet
-  for (const sheetTask of finalTasks) {
-    const localVersion = tasks.find(t => t.id === sheetTask.id);
-    if (localVersion) {
-      if (!sheetTask.tag && localVersion.tag) sheetTask.tag = localVersion.tag;
-      // Do NOT patch notes from local — sheet is source of truth for notes
+  for (const t of sheetTasks) finalMap.set(t.id, t);
+  for (const localTask of localTasks) {
+    const current = finalMap.get(localTask.id);
+    if (!current || (localTask.updatedAt || 0) > (current.updatedAt || 0)) {
+      finalMap.set(localTask.id, localTask);
     }
   }
 
-  // Add offline-created local tasks
-  for (const t of localOnlyTasks) {
-    finalTasks.push({ ...t, updatedAt: t.updatedAt || t.createdAt });
-  }
-
-  // Sort by sortOrder if available, fall back to createdAt desc
-  tasks = finalTasks.sort((a,b) => {
-    if (a.sortOrder && b.sortOrder) return a.sortOrder - b.sortOrder;
+  tasks = [...finalMap.values()].sort((a,b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
     return b.createdAt - a.createdAt;
   });
+
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
+  clearTombstonesForActiveTasks();
   render();
 
-  // If modal is open, refresh tag from sheet if local was empty
   if (activeTaskId) {
     const t = tasks.find(t => t.id === activeTaskId);
     if (t) {
@@ -2137,33 +2183,79 @@ async function mergeWithSheet() {
       if (tagInputEl && t.tag && !tagInputEl.value.trim()) tagInputEl.value = t.tag;
     }
   }
-
-  // Push back to sheet only if we added local-only tasks
-  if (localOnlyTasks.length > 0) {
-    await pushAllTasksToSheet();
-  }
 }
 
 async function pushAllTasksToSheet() {
-  if (!sheetId || !isTokenValid()) return;
+  if (!sheetId || !isTokenValid()) return false;
   isPushing = true;
-  // Clear data rows then rewrite
-  await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M:clear`, {});
-  if (tasks.length === 0) return;
-  const rows = tasks.map(t => [
-    t.id, t.text, t.category||'work',
-    t.done?'true':'false', t.blocked?'true':'false',
-    t.priority||'medium', t.scheduledDate||'',
-    t.notes||'', t.createdAt||'', t.completedAt||'',
-    t.updatedAt || t.createdAt || Date.now(),
-    t.tag||'',
-    t.sortOrder ?? t.createdAt
-  ]);
-  await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:M?valueInputOption=RAW`, { values: rows });
-  isPushing = false;
+  try {
+    await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M:clear`, {});
+    if (tasks.length === 0) return true;
+    const rows = tasks.map(t => [
+      t.id, t.text, t.category||'work',
+      t.done?'true':'false', t.blocked?'true':'false',
+      t.priority||'medium', t.scheduledDate||'',
+      t.notes||'', t.createdAt||'', t.completedAt||'',
+      t.updatedAt || t.createdAt || Date.now(),
+      t.tag||'',
+      t.sortOrder ?? t.createdAt
+    ]);
+    await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:M?valueInputOption=RAW`, { values: rows });
+    return true;
+  } finally {
+    isPushing = false;
+  }
 }
 
+async function refreshFromSource(reason = 'manual') {
+  if (!sheetId || !(isTokenValid() || gUserId)) { refreshLastSyncUI(); return false; }
+  const valid = isTokenValid() || await getValidToken();
+  if (!valid) return false;
+  await mergeWithSheet();
+  setLastSynced(Date.now(), reason);
+  renderSyncSettings();
+  if (archiveOpen) {
+    archiveData = await loadArchive();
+    renderArchive(archiveData);
+  }
+  return true;
+}
 
+async function runFullSync(reason = 'manual', options = {}) {
+  if (!sheetId || !(isTokenValid() || gUserId)) return false;
+  if (syncPromise) return syncPromise;
+  const { archiveList = null } = options;
+  syncPromise = (async () => {
+    const valid = isTokenValid() || await getValidToken();
+    if (!valid) return false;
+    showSyncIndicator('↻ Syncing...');
+    const wrote = await pushAllTasksToSheet();
+    if (archiveList && archiveList.length) await archiveTasks(archiveList);
+    await mergeWithSheet();
+    if (wrote) {
+      setLastSynced(Date.now(), reason);
+      announceSync(reason);
+      showSyncIndicator('✓ Synced');
+    }
+    renderSyncSettings();
+    if (archiveOpen) {
+      archiveData = await loadArchive();
+      renderArchive(archiveData);
+    }
+    return wrote;
+  })().finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+
+function scheduleFullSync(reason = 'mutation') {
+  if (!sheetId || !isTokenValid()) return;
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => { runFullSync(reason).catch(() => {}); }, 500);
+}
+
+function syncNow() {
+  runFullSync('manual').catch(() => refreshFromSource('manual').catch(() => {}));
+}
 
 function showSyncIndicator(msg) {
   const el = document.getElementById('syncIndicator');
@@ -2183,11 +2275,12 @@ async function initGoogleSync() {
     const valid = isTokenValid() || await getValidToken();
     if (valid) {
       updateSyncUI('syncing', '');
-      await mergeWithSheet();
+      await refreshFromSource('startup');
       updateSyncUI('on', '');
       renderSyncSettings();
       showSyncIndicator('✓ Connected');
       startTokenKeepalive();
+      schedulePeriodicSync();
     } else {
       renderSyncSettings();
     }
@@ -2225,11 +2318,8 @@ function updateArchiveButton() {
 }
 
 // pushIfConnected — call explicitly when user takes an action
-function pushIfConnected() {
-  if (sheetId && isTokenValid()) {
-    if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-    syncDebounceTimer = setTimeout(() => pushAllTasksToSheet(), 500);
-  }
+function pushIfConnected(reason = 'mutation') {
+  scheduleFullSync(reason);
 }
 
 // ── Client ID setup in settings ───────────────────────────────
@@ -2490,7 +2580,7 @@ function restoreArchivedTask(id) {
   save();
   render();
   renderArchive(archiveData);
-  pushIfConnected();
+  pushIfConnected('restore-archive');
   showSyncIndicator('✓ Restored from archive');
 }
 
@@ -2754,8 +2844,10 @@ render();
 window.addEventListener('load', async () => {
   initAIStatus();
   initATH();
+  refreshLastSyncUI();
   setTimeout(initGoogleSync, 1000);
   setTimeout(initNotifications, 1500);
+  schedulePeriodicSync();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').then(reg => {
       swReg = reg;
@@ -2785,13 +2877,26 @@ function dismissATH() {
 // ── Auto-refresh when app comes back to foreground ─────────────
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible') {
-    render(); // re-render day groupings only
+    render();
+    refreshFromSource('foreground').catch(() => {});
   }
-  // Push to sheet when app goes to background
   if (document.visibilityState === 'hidden') {
     if (sheetId && isTokenValid()) {
-      pushAllTasksToSheet().catch(() => {});
+      runFullSync('background').catch(() => {});
     }
+  }
+});
+
+window.addEventListener('storage', e => {
+  if (e.key === 'wtt_sync_ping' && document.visibilityState === 'visible') {
+    refreshFromSource('peer-update').catch(() => {});
+  }
+  if (e.key === 'wtt_last_synced_at') refreshLastSyncUI();
+});
+
+syncChannel?.addEventListener('message', e => {
+  if (e.data?.type === 'SYNC_PING' && document.visibilityState === 'visible') {
+    refreshFromSource('peer-update').catch(() => {});
   }
 });
 
@@ -2819,13 +2924,8 @@ document.addEventListener('touchend', async () => {
   if (!ptrActive) { ptrStartY = 0; return; }
   ptrActive = false;
   ptrStartY = 0;
+  await refreshFromSource('pull-to-refresh').catch(() => {});
   render();
-  if (sheetId) {
-    const valid = isTokenValid() || await getValidToken();
-    if (valid) {
-      try { await mergeWithSheet(); } catch(e) {}
-    }
-  }
   setTimeout(() => {
     document.getElementById('ptrIndicator').classList.remove('visible');
   }, 600);

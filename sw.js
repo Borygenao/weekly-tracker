@@ -1,5 +1,12 @@
-const CACHE = 'weekly-v41';
-const ASSETS = ['/weekly-tracker/', '/weekly-tracker/index.html', '/weekly-tracker/icon-192.png', '/weekly-tracker/icon-512.png', '/weekly-tracker/apple-touch-icon.png', '/weekly-tracker/manifest.json'];
+const CACHE = 'weekly-v42';
+const ASSETS = [
+  '/weekly-tracker/',
+  '/weekly-tracker/index.html',
+  '/weekly-tracker/icon-192.png',
+  '/weekly-tracker/icon-512.png',
+  '/weekly-tracker/apple-touch-icon.png',
+  '/weekly-tracker/manifest.json'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
@@ -14,14 +21,31 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
-  if (!url.startsWith(self.location.origin)) return;
-  if (url.includes('/api/')) return;
+  const req = e.request;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (req.method !== 'GET') return;
+  if (url.pathname.includes('/api/')) return;
+
+  const isShell = url.pathname === '/weekly-tracker/' || url.pathname.endsWith('/index.html');
+
+  if (isShell) {
+    e.respondWith(
+      fetch(req, { cache: 'no-store' }).then(res => {
+        if (res && res.status === 200) {
+          caches.open(CACHE).then(c => c.put(req, res.clone()));
+        }
+        return res;
+      }).catch(() => caches.match(req).then(r => r || caches.match('/weekly-tracker/index.html')))
+    );
+    return;
+  }
+
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(res => {
-        if (res && res.status === 200 && e.request.method === 'GET') {
-          caches.open(CACHE).then(c => c.put(e.request, res.clone()));
+    caches.match(req).then(cached => {
+      const network = fetch(req).then(res => {
+        if (res && res.status === 200) {
+          caches.open(CACHE).then(c => c.put(req, res.clone()));
         }
         return res;
       }).catch(() => cached);
@@ -30,8 +54,6 @@ self.addEventListener('fetch', e => {
   );
 });
 
-// ── Notification scheduling ────────────────────────────────────
-// Receives schedule from app, stores in SW scope, fires at right time
 let notifSchedule = null;
 let notifTimer = null;
 
@@ -44,6 +66,9 @@ self.addEventListener('message', e => {
     if (notifTimer) clearTimeout(notifTimer);
     notifSchedule = null;
   }
+  if (e.data?.type === 'TASK_DATA_RESPONSE') {
+    showNotification(e.data.notifType, e.data.data);
+  }
 });
 
 function scheduleNext() {
@@ -53,7 +78,6 @@ function scheduleNext() {
   const now = new Date();
   const times = [];
 
-  // Morning
   if (notifSchedule.morningEnabled) {
     const [mh, mm] = notifSchedule.morningTime.split(':').map(Number);
     const morning = new Date(now);
@@ -62,7 +86,6 @@ function scheduleNext() {
     times.push({ time: morning, type: 'morning' });
   }
 
-  // Evening
   if (notifSchedule.eveningEnabled) {
     const [eh, em] = notifSchedule.eveningTime.split(':').map(Number);
     const evening = new Date(now);
@@ -72,41 +95,28 @@ function scheduleNext() {
   }
 
   if (!times.length) return;
-
-  // Sort and pick the next one
   times.sort((a, b) => a.time - b.time);
   const next = times[0];
   const delay = next.time - now;
 
   notifTimer = setTimeout(() => {
     fireNotification(next.type);
-    scheduleNext(); // schedule the next one after firing
+    scheduleNext();
   }, delay);
 }
 
 function fireNotification(type) {
-  // Get latest task data from app
   self.clients.matchAll().then(clients => {
     if (clients.length > 0) {
-      // App is open — ask it for task data then notify
       clients[0].postMessage({ type: 'REQUEST_TASK_DATA', notifType: type });
     } else {
-      // App is closed — fire generic notification
       showNotification(type, null);
     }
   });
 }
 
-// App sends back task data after REQUEST_TASK_DATA
-self.addEventListener('message', e => {
-  if (e.data?.type === 'TASK_DATA_RESPONSE') {
-    showNotification(e.data.notifType, e.data.data);
-  }
-});
-
 function showNotification(type, data) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-
   let title, body, tag;
 
   if (type === 'morning') {
@@ -144,7 +154,6 @@ function showNotification(type, data) {
   });
 }
 
-// Open app when notification is clicked
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(

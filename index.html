@@ -724,7 +724,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version">v0.5.5</div>
+<div class="build-version">v0.5.6</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
@@ -1576,7 +1576,7 @@ async function clearDone() {
   render();
   const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
   if (canSyncArchive) {
-    await runFullSync('archive-completed', { archiveList: toArchive });
+    await runFullSync('archive-completed', { archiveList: toArchive }).catch(() => archiveTasks(toArchive).catch(() => {}));
   } else {
     archiveTasks(toArchive).catch(() => {});
   }

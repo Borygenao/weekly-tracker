@@ -417,6 +417,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .build-version { position:fixed; right:12px; bottom:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(232,232,232,.28); letter-spacing:.8px; z-index:20; pointer-events:none; user-select:none; }
 .runtime-error { position:fixed; left:12px; bottom:10px; max-width:min(70vw, 420px); font-family:'Space Mono',monospace; font-size:10px; color:#ffb4b4; background:rgba(64,0,0,.68); border:1px solid rgba(255,120,120,.22); border-radius:8px; padding:6px 8px; z-index:25; display:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.debug-probe { position:fixed; left:12px; bottom:42px; max-width:min(72vw, 420px); font-family:'Space Mono',monospace; font-size:10px; color:rgba(232,232,232,.62); background:rgba(15,15,15,.78); border:1px solid rgba(255,255,255,.08); border-radius:8px; padding:6px 8px; z-index:24; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
@@ -724,12 +725,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version" id="buildVersion">v0.5.2</div>
+<div class="build-version" id="buildVersion">v0.5.3</div>
+<div class="debug-probe" id="debugProbe">ready</div>
 <div class="runtime-error" id="runtimeError"></div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
-const BUILD_VERSION = '0.5.2';
+const BUILD_VERSION = '0.5.3';
 let supabase = null;
 let supabaseUser = null;
 let supabaseProfile = null;
@@ -831,6 +833,12 @@ function showRuntimeError(message) {
   el.style.display = 'block';
 }
 
+function recordDebugProbe(message) {
+  const el = document.getElementById('debugProbe');
+  if (!el) return;
+  el.textContent = message;
+}
+
 function setCloudSyncBroken(message = 'Cloud sync unavailable') {
   supabaseSyncBroken = true;
   supabaseSyncMessage = message;
@@ -838,6 +846,7 @@ function setCloudSyncBroken(message = 'Cloud sync unavailable') {
 
 // ── Settings ───────────────────────────────────────────────────
 function toggleSettings() {
+  recordDebugProbe('toggleSettings()');
   settingsOpen = !settingsOpen;
   document.getElementById('settingsPanel').classList.toggle('open', settingsOpen);
   document.getElementById('settingsBtn').classList.toggle('active', settingsOpen);
@@ -1574,6 +1583,7 @@ function setFilter(f, btn) {
 
 // ── Task CRUD ──────────────────────────────────────────────────
 async function addTask() {
+  recordDebugProbe('addTask()');
   const text = taskInput.value.trim(); if (!text) return;
   const createdAt = Date.now();
   const id = createTaskId();
@@ -1664,6 +1674,7 @@ function selectDay(key) {
 
 // ── Modal ──────────────────────────────────────────────────────
 function openModal(id, isNewWork = false) {
+  recordDebugProbe(`openModal(${String(id).slice(0, 12)})`);
   const t = tasks.find(t=>t.id===id); if (!t) return;
   activeTaskId = id;
   pendingScheduleDate = t.scheduledDate || null;
@@ -2888,6 +2899,7 @@ let archiveOpen = false;
 let archiveData = [];
 
 async function toggleArchive() {
+  recordDebugProbe('toggleArchive()');
   closeActionMenu();
   archiveOpen = !archiveOpen;
   const overlay = document.getElementById('archiveOverlay');
@@ -3142,6 +3154,18 @@ window.addEventListener('unhandledrejection', e => {
   console.error('Unhandled rejection:', e?.reason);
   showRuntimeError(msg);
 });
+
+document.addEventListener('pointerdown', e => {
+  const target = e.target;
+  const label = target?.id ? `#${target.id}` : target?.className ? `.${String(target.className).split(' ')[0]}` : (target?.tagName || 'unknown');
+  recordDebugProbe(`pointer ${label}`);
+}, true);
+
+document.addEventListener('click', e => {
+  const target = e.target;
+  const label = target?.id ? `#${target.id}` : target?.className ? `.${String(target.className).split(' ')[0]}` : (target?.tagName || 'unknown');
+  recordDebugProbe(`click ${label}`);
+}, true);
 
 // All done notification — fires instantly when last task completed
 function checkAllDone() {

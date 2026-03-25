@@ -724,6 +724,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 
 <script>
 // ── State ─────────────────────────────────────────────────────
+let supabase = null;
+let supabaseUser = null;
+let supabaseProfile = null;
+let supabaseChannel = null;
+let supabaseAuthBound = false;
 let tasks = normalizeLoadedTasks(JSON.parse(localStorage.getItem('wtt_tasks') || '[]'));
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
@@ -2159,11 +2164,6 @@ const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9
 const SUPABASE_TASKS_TABLE = 'tasks';
 const SUPABASE_PROFILES_TABLE = 'profiles';
 
-let supabase = null;
-let supabaseUser = null;
-let supabaseProfile = null;
-let supabaseChannel = null;
-let supabaseAuthBound = false;
 let syncDebounceTimer = null;
 let isPushing = false;
 

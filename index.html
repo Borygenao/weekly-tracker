@@ -732,6 +732,8 @@ let supabaseUser = null;
 let supabaseProfile = null;
 let supabaseChannel = null;
 let supabaseAuthBound = false;
+let supabaseSyncBroken = false;
+let supabaseSyncMessage = '';
 let tasks = normalizeLoadedTasks(JSON.parse(localStorage.getItem('wtt_tasks') || '[]'));
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
@@ -807,6 +809,11 @@ function normalizeLoadedTasks(items) {
 
 function escapeInlineJs(value) {
   return `'${String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function setCloudSyncBroken(message = 'Cloud sync unavailable') {
+  supabaseSyncBroken = true;
+  supabaseSyncMessage = message;
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -2097,6 +2104,10 @@ async function renderSyncSettings() {
   refreshLastSyncUI();
   archiveData = await loadArchive().catch(() => getLocalArchiveCache());
   renderCalendar();
+  if (supabaseSyncBroken && !hasCloudSession()) {
+    row.innerHTML = `<div class="sync-status"><div class="sync-dot"></div><span>${escapeHtml(supabaseSyncMessage || 'Cloud sync unavailable')}</span></div>`;
+    return;
+  }
   if (hasCloudSession()) {
     const label = supabaseProfile?.isAdmin ? `Connected · ${supabaseUser.email} · admin` : `Connected · ${supabaseUser.email}`;
     row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>${escapeHtml(label)}</span></div><button class="btn-sm" onclick="syncNow()">Sync now</button><button class="btn-signout" onclick="supabaseSignOut()">Sign out</button>`;
@@ -2195,13 +2206,18 @@ async function getValidToken() {
 
 function initSupabaseClient() {
   if (supabase || !window.supabase?.createClient) return;
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  });
+  try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
+  } catch (error) {
+    console.error('Supabase init failed', error);
+    setCloudSyncBroken('Cloud sync init failed');
+  }
 }
 
 function normalizeTaskForSync(task) {
@@ -2365,7 +2381,13 @@ async function loadSupabaseProfile() {
     supabaseProfile = null;
     return null;
   }
-  const { data } = await supabase.from(SUPABASE_PROFILES_TABLE).select('is_admin,email').eq('id', supabaseUser.id).maybeSingle();
+  const { data, error } = await supabase.from(SUPABASE_PROFILES_TABLE).select('is_admin,email').eq('id', supabaseUser.id).maybeSingle();
+  if (error) {
+    console.error('Supabase profile load failed', error);
+    setCloudSyncBroken('Run supabase_setup.sql');
+    supabaseProfile = { isAdmin: false, email: supabaseUser.email };
+    return supabaseProfile;
+  }
   supabaseProfile = data || { isAdmin: false, email: supabaseUser.email };
   if (supabaseProfile && supabaseProfile.is_admin !== undefined && supabaseProfile.isAdmin === undefined) {
     supabaseProfile = { ...supabaseProfile, isAdmin: supabaseProfile.is_admin };
@@ -2376,7 +2398,11 @@ async function loadSupabaseProfile() {
 async function fetchCloudRows() {
   if (!hasCloudSession()) return [];
   const { data, error } = await supabase.from(SUPABASE_TASKS_TABLE).select('*').order('updated_at', { ascending: false }).limit(5000);
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase task fetch failed', error);
+    setCloudSyncBroken('Run supabase_setup.sql');
+    return [];
+  }
   return (data || []).map(dbRowToTask);
 }
 
@@ -2385,23 +2411,33 @@ async function pushRowsToCloud(rows) {
   const payload = rows.map(row => taskToDbRow(row));
   if (!payload.length) return true;
   const { error } = await supabase.from(SUPABASE_TASKS_TABLE).upsert(payload, { onConflict: 'id' });
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase task upsert failed', error);
+    setCloudSyncBroken('Run supabase_setup.sql');
+    return false;
+  }
   return true;
 }
 
 async function subscribeToTaskChanges() {
   if (!supabase || !hasCloudSession()) return;
-  if (supabaseChannel) await supabase.removeChannel(supabaseChannel);
-  supabaseChannel = supabase.channel(`tasks-${supabaseUser.id}-${Date.now()}`);
-  supabaseChannel
-    .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TASKS_TABLE }, () => {
-      refreshFromSource('realtime').catch(() => {});
-    });
-  await supabaseChannel.subscribe();
+  try {
+    if (supabaseChannel) await supabase.removeChannel(supabaseChannel);
+    supabaseChannel = supabase.channel(`tasks-${supabaseUser.id}-${Date.now()}`);
+    supabaseChannel
+      .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TASKS_TABLE }, () => {
+        refreshFromSource('realtime').catch(() => {});
+      });
+    await supabaseChannel.subscribe();
+  } catch (error) {
+    console.error('Supabase realtime subscribe failed', error);
+    setCloudSyncBroken('Realtime unavailable');
+  }
 }
 
 async function supabaseSignIn() {
   initSupabaseClient();
+  if (!supabase) return;
   const redirectTo = window.location.origin + window.location.pathname;
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -2494,32 +2530,38 @@ async function initSupabaseSync() {
   initSupabaseClient();
   renderSyncSettings();
   if (!supabase) return;
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    console.error('Supabase session load failed', error);
-    return;
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error('Supabase session load failed', error);
+      setCloudSyncBroken('Cloud auth unavailable');
+      return;
+    }
+    supabaseUser = data.session?.user || null;
+    await loadSupabaseProfile();
+    if (!supabaseAuthBound) {
+      supabase.auth.onAuthStateChange(async (_event, session) => {
+        supabaseUser = session?.user || null;
+        await loadSupabaseProfile();
+        renderSyncSettings();
+        if (supabaseUser) {
+          await subscribeToTaskChanges();
+          await refreshFromSource('auth-change').catch(() => {});
+        }
+      });
+      supabaseAuthBound = true;
+    }
+    if (supabaseUser) {
+      await subscribeToTaskChanges();
+      await refreshFromSource('startup').catch(() => {});
+      showSyncIndicator('✓ Connected');
+      startTokenKeepalive();
+    }
+    schedulePeriodicSync();
+  } catch (error) {
+    console.error('Supabase init error', error);
+    setCloudSyncBroken('Cloud sync unavailable');
   }
-  supabaseUser = data.session?.user || null;
-  await loadSupabaseProfile();
-  if (!supabaseAuthBound) {
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      supabaseUser = session?.user || null;
-      await loadSupabaseProfile();
-      renderSyncSettings();
-      if (supabaseUser) {
-        await subscribeToTaskChanges();
-        await refreshFromSource('auth-change').catch(() => {});
-      }
-    });
-    supabaseAuthBound = true;
-  }
-  if (supabaseUser) {
-    await subscribeToTaskChanges();
-    await refreshFromSource('startup').catch(() => {});
-    showSyncIndicator('✓ Connected');
-    startTokenKeepalive();
-  }
-  schedulePeriodicSync();
 }
 
 // save() — persists locally only (cloud push happens in saveModal/addTask/background)

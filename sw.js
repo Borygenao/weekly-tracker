@@ -1,4 +1,4 @@
-const CACHE = 'weekly-v68';
+const CACHE = 'weekly-v69';
 const ASSETS = [
   '/weekly-tracker/',
   '/weekly-tracker/index.html',
@@ -71,6 +71,7 @@ self.addEventListener('fetch', e => {
 
 let notifSchedule = null;
 let notifTimer = null;
+let lastTaskSnapshot = null;
 
 self.addEventListener('message', e => {
   if (e.data?.type === 'SCHEDULE_NOTIFICATIONS') {
@@ -84,7 +85,24 @@ self.addEventListener('message', e => {
   if (e.data?.type === 'TASK_DATA_RESPONSE') {
     showNotification(e.data.notifType, e.data.data);
   }
+  if (e.data?.type === 'UPDATE_TASK_SNAPSHOT') {
+    lastTaskSnapshot = e.data.data || null;
+  }
 });
+
+function isWeekday(date) {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
+}
+
+function nextWeekdayAt(timeValue, now) {
+  const [hours, minutes] = String(timeValue || '08:00').split(':').map(Number);
+  const next = new Date(now);
+  next.setHours(hours || 0, minutes || 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  while (!isWeekday(next)) next.setDate(next.getDate() + 1);
+  return next;
+}
 
 function scheduleNext() {
   if (!notifSchedule) return;
@@ -93,20 +111,12 @@ function scheduleNext() {
   const now = new Date();
   const times = [];
 
-  if (notifSchedule.morningEnabled) {
-    const [mh, mm] = notifSchedule.morningTime.split(':').map(Number);
-    const morning = new Date(now);
-    morning.setHours(mh, mm, 0, 0);
-    if (morning <= now) morning.setDate(morning.getDate() + 1);
-    times.push({ time: morning, type: 'morning' });
+  if (notifSchedule.enabled && notifSchedule.morningEnabled) {
+    times.push({ time: nextWeekdayAt(notifSchedule.morningTime, now), type: 'morning' });
   }
 
-  if (notifSchedule.eveningEnabled) {
-    const [eh, em] = notifSchedule.eveningTime.split(':').map(Number);
-    const evening = new Date(now);
-    evening.setHours(eh, em, 0, 0);
-    if (evening <= now) evening.setDate(evening.getDate() + 1);
-    times.push({ time: evening, type: 'evening' });
+  if (notifSchedule.enabled && notifSchedule.eveningEnabled) {
+    times.push({ time: nextWeekdayAt(notifSchedule.eveningTime, now), type: 'evening' });
   }
 
   if (!times.length) return;
@@ -125,36 +135,50 @@ function fireNotification(type) {
     if (clients.length > 0) {
       clients[0].postMessage({ type: 'REQUEST_TASK_DATA', notifType: type });
     } else {
-      showNotification(type, null);
+      showNotification(type, lastTaskSnapshot);
     }
   });
 }
 
 function showNotification(type, data) {
-  const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  let title, body, tag;
+  const current = new Date();
+  if (!isWeekday(current)) return;
+
+  const weekday = current.toLocaleDateString('en-US', { weekday: 'long' });
+  let title = '';
+  let body = '';
+  let tag = '';
 
   if (type === 'morning') {
     const total = data?.todayCount ?? 0;
-    const high = data?.highCount ?? 0;
-    const overdue = data?.overdueCount ?? 0;
-    title = `Good morning! ${today}`;
-    if (total === 0) {
-      body = 'No tasks scheduled for today. Add some!';
+    const weekCount = data?.weekCount ?? 0;
+    const isMonday = current.getDay() === 1;
+    title = isMonday ? 'Start the week strong' : `Good morning! ${weekday}`;
+    if (isMonday) {
+      body = weekCount > 0
+        ? `${weekCount} work task${weekCount !== 1 ? 's are' : ' is'} lined up this week. Review and plan your week.`
+        : 'Plan your work week and add your first tasks.';
+    } else if (total === 0) {
+      body = 'No work tasks are planned for today. Add or plan today\'s work.';
     } else {
-      body = `${total} task${total !== 1 ? 's' : ''} today${high > 0 ? `, ${high} high priority` : ''}${overdue > 0 ? `. ⚠ ${overdue} overdue` : ''}.`;
+      body = `${total} work task${total !== 1 ? 's are' : ' is'} lined up for today. Review and get started.`;
     }
     tag = 'morning-briefing';
   } else {
     const pending = data?.pendingCount ?? 0;
     const done = data?.doneCount ?? 0;
+    const blocked = data?.blockedCount ?? 0;
+    const activity = data?.activityCount ?? (pending + done + blocked);
+
+    if (activity <= 0 && data) return;
+
     title = 'End of day check-in';
-    if (pending === 0 && done > 0) {
-      body = `All ${done} tasks done today! Great work. 🎉`;
-    } else if (pending === 0) {
-      body = 'No tasks pending. Ready to wrap up?';
+    if (done > 0 && pending === 0 && blocked === 0) {
+      body = `You completed ${done} work task${done !== 1 ? 's' : ''} today. Send your daily report.`;
+    } else if (done > 0 || blocked > 0 || pending > 0) {
+      body = `${done} done, ${blocked} blocked, ${pending} still open. Send your daily report before you wrap up.`;
     } else {
-      body = `${pending} task${pending !== 1 ? 's' : ''} still pending. Generate your daily report?`;
+      body = 'You made progress today. Send your daily work report before you wrap up.';
     }
     tag = 'evening-nudge';
   }
@@ -165,7 +189,7 @@ function showNotification(type, data) {
     badge: '/weekly-tracker/icon-192.png',
     tag,
     renotify: true,
-    data: { url: '/weekly-tracker/' }
+    data: { url: notifSchedule?.targetUrl || '/weekly-tracker/dev.html' }
   });
 }
 
@@ -173,7 +197,7 @@ self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil(
     self.clients.matchAll({ type: 'window' }).then(clients => {
-      const appUrl = '/weekly-tracker/';
+      const appUrl = e.notification?.data?.url || '/weekly-tracker/dev.html';
       for (const client of clients) {
         if (client.url.includes('weekly-tracker') && 'focus' in client) {
           return client.focus();

@@ -29,9 +29,20 @@ create table if not exists public.tasks (
   deleted_at bigint
 );
 
+create table if not exists public.notification_settings (
+  user_id uuid primary key references auth.users (id) on delete cascade,
+  enabled boolean not null default true,
+  morning_enabled boolean not null default true,
+  morning_time text not null default '08:00',
+  evening_enabled boolean not null default true,
+  evening_time text not null default '20:00',
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create index if not exists tasks_user_id_idx on public.tasks (user_id);
 create index if not exists tasks_updated_at_idx on public.tasks (updated_at desc);
 create index if not exists tasks_archived_at_idx on public.tasks (archived_at desc);
+create index if not exists notification_settings_updated_at_idx on public.notification_settings (updated_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -95,6 +106,7 @@ $$;
 
 alter table public.profiles enable row level security;
 alter table public.tasks enable row level security;
+alter table public.notification_settings enable row level security;
 
 drop policy if exists "profiles_select_self_or_admin" on public.profiles;
 create policy "profiles_select_self_or_admin"
@@ -134,6 +146,31 @@ on public.tasks
 for delete
 using (user_id = auth.uid() or public.is_admin_user());
 
+drop policy if exists "notification_settings_select_self_or_admin" on public.notification_settings;
+create policy "notification_settings_select_self_or_admin"
+on public.notification_settings
+for select
+using (user_id = auth.uid() or public.is_admin_user());
+
+drop policy if exists "notification_settings_insert_self_or_admin" on public.notification_settings;
+create policy "notification_settings_insert_self_or_admin"
+on public.notification_settings
+for insert
+with check (user_id = auth.uid() or public.is_admin_user());
+
+drop policy if exists "notification_settings_update_self_or_admin" on public.notification_settings;
+create policy "notification_settings_update_self_or_admin"
+on public.notification_settings
+for update
+using (user_id = auth.uid() or public.is_admin_user())
+with check (user_id = auth.uid() or public.is_admin_user());
+
+drop policy if exists "notification_settings_delete_self_or_admin" on public.notification_settings;
+create policy "notification_settings_delete_self_or_admin"
+on public.notification_settings
+for delete
+using (user_id = auth.uid() or public.is_admin_user());
+
 do $$
 begin
   if not exists (
@@ -144,6 +181,15 @@ begin
       and tablename = 'tasks'
   ) then
     execute 'alter publication supabase_realtime add table public.tasks';
+  end if;
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'notification_settings'
+  ) then
+    execute 'alter publication supabase_realtime add table public.notification_settings';
   end if;
 end
 $$;

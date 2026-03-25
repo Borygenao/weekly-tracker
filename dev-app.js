@@ -1,10 +1,11 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.7.2-dev';
+const BUILD='v0.7.3-dev';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';
+const THEME_KEY='wtt_dev_theme';
 let tasks=[],archiveData=[],filter='all',sortMode='default',category='all',newTaskCat='work';
 let activeTaskId=null,pendingScheduleDate='',pendingPriority='medium',pendingDeleteId=null,tagHighlightIndex=-1;
 let settingsOpen=false,archiveOpen=false,calOpen=false,reportOpen=false,reportType='daily',reportText='',ptrStartY=0,ptrActive=false,syncTimer=null;
@@ -25,6 +26,9 @@ const prefs=()=>({autoArchive:localStorage.getItem(AUTO_ARCHIVE_KEY)==='1'});
 function renderWorkflowSettings(){const t=$('autoArchiveToggle');if(t)t.classList.toggle('on',prefs().autoArchive)}
 function toggleAutoArchive(){localStorage.setItem(AUTO_ARCHIVE_KEY,prefs().autoArchive?'0':'1');renderWorkflowSettings()}
 function saveProxyUrl(){localStorage.setItem(PROXY_KEY,$('proxyUrlInput')?.value?.trim()||'');indicator('Saved')}
+function themeValue(){return localStorage.getItem(THEME_KEY)==='light'?'light':'dark'}
+function applyTheme(theme=themeValue()){const next=theme==='light'?'light':'dark';document.documentElement.setAttribute('data-theme',next);const meta=$('themeColorMeta');if(meta)meta.setAttribute('content',next==='light'?'#f7f8fb':'#0d0d0d');const toggle=$('themeToggle'),label=$('themeModeText');if(toggle)toggle.classList.toggle('on',next==='light');if(label)label.textContent=next==='light'?'Light mode':'Dark mode'}
+function toggleTheme(){const next=themeValue()==='light'?'dark':'light';localStorage.setItem(THEME_KEY,next);applyTheme(next);indicator(next==='light'?'Light mode enabled':'Dark mode enabled')}
 function initAIStatus(){const dot=$('aiStatusDot'),txt=$('aiStatusText'),ai=$('aiDot');if(dot)dot.classList.remove('on');if(txt)txt.textContent='Non-core features paused in dev rebuild';if(ai)ai.style.display='none'}
 function disableNonCoreFeatures(){if($('notifSettingsRow'))$('notifSettingsRow').innerHTML='<div class="settings-hint">Notifications come back after sync parity.</div>';if($('notifTimesRow'))$('notifTimesRow').style.display='none';const b=$('btnPolishNote');if(b){b.textContent='Unavailable in dev';b.disabled=true;b.style.opacity='0.45'}}
 function toggleSettings(){settingsOpen=!settingsOpen;$('settingsPanel')?.classList.toggle('open',settingsOpen);$('settingsBtn')?.classList.toggle('active',settingsOpen)}
@@ -137,5 +141,5 @@ window.addEventListener('storage',e=>{if(e.key===LAST_SYNC_KEY)refreshLastSyncUI
 document.addEventListener('touchstart',e=>{if(window.scrollY===0&&!ptrActive)ptrStartY=e.touches[0].clientY},{passive:true});
 document.addEventListener('touchmove',e=>{if(!ptrStartY)return;const dy=e.touches[0].clientY-ptrStartY;if(dy>80&&window.scrollY===0){ptrActive=true;$('ptrIndicator')?.classList.add('visible')}},{passive:true});
 document.addEventListener('touchend',()=>{if(!ptrActive){ptrStartY=0;return}ptrActive=false;ptrStartY=0;refreshFromCloud('pull').catch(handleCloudError).finally(()=>setTimeout(()=>$('ptrIndicator')?.classList.remove('visible'),500))});
-window.addEventListener('load',async()=>{$('proxyUrlInput').value=localStorage.getItem(PROXY_KEY)||'';$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);initAIStatus();disableNonCoreFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}await initSupabaseSync()});
+window.addEventListener('load',async()=>{applyTheme();$('proxyUrlInput').value=localStorage.getItem(PROXY_KEY)||'';$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);initAIStatus();disableNonCoreFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}await initSupabaseSync()});
 

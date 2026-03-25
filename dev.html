@@ -20,11 +20,21 @@
     }
   })();
 </script>
+<script>
+  (function() {
+    try {
+      var storedTheme = localStorage.getItem('wtt_dev_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', storedTheme === 'light' ? 'light' : 'dark');
+    } catch (_err) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <title>Weekly.</title>
 <meta name="google-site-verification" content="RTfoARTqOpDgrOW3-7Cm4q5wUlWRMUGQ2yTo5jsdUHg">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Weekly.">
-<meta name="theme-color" content="#0d0d0d">
+<meta name="theme-color" content="#0d0d0d" id="themeColorMeta">
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
 <link rel="manifest" href="/weekly-tracker/manifest.json">
 <link rel="apple-touch-icon" href="/weekly-tracker/apple-touch-icon.png">
@@ -42,17 +52,32 @@
   --glass: rgba(17,22,34,.72); --glass-strong: rgba(15,19,30,.86);
   --shadow-lg: 0 22px 60px rgba(0,0,0,.45); --shadow-md: 0 12px 28px rgba(0,0,0,.28);
 }
+[data-theme="light"] {
+  --bg: #f7f8fb; --surface: #ffffff; --surface2: #f2f4f8; --border: #dde3ec;
+  --accent: #9ab51f; --accent-dim: #7f9816;
+  --text: #162131; --muted: #66758b; --muted2: #97a3b5;
+  --high: #de4b4b; --medium: #cb8619; --low: #2d8a5f;
+  --work: #5f708c; --personal: #9b6abf;
+  --glass: rgba(255,255,255,.84); --glass-strong: rgba(255,255,255,.94);
+  --shadow-lg: 0 22px 60px rgba(56,77,110,.14); --shadow-md: 0 12px 28px rgba(56,77,110,.10);
+}
 html { font-size: 16px; }
 body { background:
   radial-gradient(circle at top left, rgba(124,156,255,.16), transparent 30%),
   radial-gradient(circle at top right, rgba(240,122,255,.10), transparent 24%),
   linear-gradient(180deg, #0b0f18 0%, #090b12 100%);
   color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; padding:24px 16px 120px; position:relative; overflow-x:hidden; }
+[data-theme="light"] body { background:
+  radial-gradient(circle at top left, rgba(255,255,255,.92), transparent 36%),
+  radial-gradient(circle at top right, rgba(245,247,252,.9), transparent 28%),
+  linear-gradient(180deg, #ffffff 0%, #f4f6fa 100%); }
 body::before { content:''; position:fixed; inset:0; background:
   linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
   linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
   background-size:32px 32px; mask-image:linear-gradient(180deg, rgba(255,255,255,.28), transparent 90%); pointer-events:none; opacity:.22; }
+[data-theme="light"] body::before { opacity:.09; }
 body::after { content:''; position:fixed; inset:auto -10% -24% auto; width:320px; height:320px; border-radius:50%; background:radial-gradient(circle, rgba(200,241,53,.09), transparent 62%); filter:blur(18px); pointer-events:none; }
+[data-theme="light"] body::after { background:radial-gradient(circle, rgba(255,255,255,.75), transparent 62%); }
 .container { width:100%; max-width:560px; margin:0 auto; position:relative; z-index:1; }
 
 /* ── Header ── */
@@ -69,6 +94,39 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .icon-btn.active svg { stroke:var(--accent); }
 .icon-btn svg { stroke:var(--muted); transition:stroke .2s; }
 .ai-dot { width:7px; height:7px; background:var(--low); border-radius:50%; position:absolute; top:7px; right:7px; box-shadow:0 0 5px var(--low); display:none; }
+[data-theme="light"] header,
+[data-theme="light"] .slide-panel,
+[data-theme="light"] .category-tabs,
+[data-theme="light"] .task-input-wrap input,
+[data-theme="light"] .task-options,
+[data-theme="light"] .week-banner,
+[data-theme="light"] .task-item,
+[data-theme="light"] .report-card,
+[data-theme="light"] .archive-overlay .archive-sheet,
+[data-theme="light"] .cal-overlay .cal-sheet,
+[data-theme="light"] .modal-sheet,
+[data-theme="light"] .confirm-card {
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94));
+  border-color: rgba(22,33,49,.08);
+  box-shadow: var(--shadow-md);
+}
+[data-theme="light"] .icon-btn,
+[data-theme="light"] .filter-icon-btn,
+[data-theme="light"] .archive-action-btn,
+[data-theme="light"] .modal-icon-btn {
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(245,247,251,.94));
+  border-color: rgba(22,33,49,.10);
+}
+[data-theme="light"] .google-btn { background:#ffffff; color:#1b2636; box-shadow:0 8px 18px rgba(56,77,110,.08); }
+[data-theme="light"] .settings-hint { color:#6e7b8f; }
+[data-theme="light"] .report-content { color:#314055; }
+[data-theme="light"] .build-version { color:rgba(22,33,49,.34); }
+[data-theme="light"] .sync-indicator { background:rgba(255,255,255,.96); color:#233248; border-top-color:rgba(22,33,49,.08); }
+[data-theme="light"] .task-item.swipe-right { background:linear-gradient(90deg, rgba(45,138,95,.12), rgba(45,138,95,0) 65%), linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94)); }
+[data-theme="light"] .task-item.swipe-left { background:linear-gradient(270deg, rgba(222,75,75,.12), rgba(222,75,75,0) 65%), linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94)); }
+.theme-row { display:flex; align-items:center; gap:10px; }
+.theme-copy { flex:1; min-width:0; }
+.theme-value { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:.8px; text-transform:uppercase; margin-top:4px; }
 
 /* ── Slide panels ── */
 .slide-panel { background:linear-gradient(180deg, rgba(17,22,34,.88), rgba(13,17,27,.76)); border:1px solid rgba(124,156,255,.12); border-radius:18px; overflow:hidden; max-height:0; transition:max-height .35s ease, margin .25s ease; margin-bottom:0; box-shadow:var(--shadow-md); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
@@ -553,6 +611,16 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
         <div class="settings-hint" style="margin-top:6px">Keeps the active list clean while reports still count archived completions.</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div class="settings-label">Appearance</div>
+        <div class="theme-row">
+          <div class="theme-copy">
+            <div class="settings-hint">Switch between the current dark theme and a light preview.</div>
+            <div class="theme-value" id="themeModeText">Dark mode</div>
+          </div>
+          <div class="toggle-switch" id="themeToggle" onclick="toggleTheme()"><div class="toggle-knob"></div></div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
         <div class="settings-label">Notifications</div>
         <div id="notifSettingsRow">
           <button class="btn-sm green" onclick="requestNotifPermission()" id="notifEnableBtn">Enable Notifications</button>
@@ -766,7 +834,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   </div>
 </div>
 
-<div class="build-version">v0.7.2-dev</div>
+<div class="build-version">v0.7.3-dev</div>
 <script src="./dev-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

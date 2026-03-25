@@ -415,6 +415,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-action-btn.delete { border-color:rgba(255,107,107,.28); color:#ff9b9b; }
 .archive-action-btn.delete:hover { background:rgba(255,107,107,.08); border-color:#ff9b9b; }
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
+.build-version { position:fixed; right:12px; bottom:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(232,232,232,.28); letter-spacing:.8px; z-index:20; pointer-events:none; user-select:none; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
@@ -721,6 +722,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     </div>
   </div>
 </div>
+
+<div class="build-version" id="buildVersion">v0.5.1</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
@@ -1899,8 +1902,7 @@ function renderTask(t, isOverdue=false) {
   const stateClass = t.done ? 'done' : t.blocked ? 'blocked' : '';
   const overdueClass = isOverdue && !t.blocked ? ' overdue-item' : '';
   const blockedBadge = t.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
-  const taskId = escapeInlineJs(t.id);
-  return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" data-id="${escapeHtml(String(t.id))}" onclick="handleTaskTap(event,${taskId})">
+  return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" data-id="${escapeHtml(String(t.id))}">
     <div class="task-body">
       <div class="task-text${noteClass}">${escapeHtml(t.text)}</div>
       <div class="task-meta">
@@ -1949,7 +1951,14 @@ const SWIPE_ACTION_X = 72;
 function initTaskInteractions() {
   document.querySelectorAll('.task-item').forEach(item => {
     item.addEventListener('pointerdown', onItemPointerDown);
+    item.addEventListener('click', onTaskItemClick);
   });
+}
+
+function onTaskItemClick(e) {
+  const id = e.currentTarget?.dataset?.id;
+  if (!id) return;
+  handleTaskTap(e, id);
 }
 
 function onItemPointerDown(e) {

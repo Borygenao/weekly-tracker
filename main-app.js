@@ -1,7 +1,7 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.8.4';
+const BUILD='v0.8.5';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';
@@ -39,10 +39,11 @@ function compactWeekLabel(){const {start,end}=getWeekWindow();const s=new Date(`
 function reportPool(){return [...tasks,...archiveData].filter(t=>!t.deletedAt&&t.category==='work')}
 function doneDate(t){return t.completedAt?key(t.completedAt):(t.archivedDate||'')}
 function inRange(d,start,end){return !!d&&d>=start&&d<=end}
-function taskLine(t,{includeTag=false}={}){const bits=[t.text];if(includeTag&&t.tag)bits.push(`#${t.tag}`);if(t.blocked)bits.push('BLOCKED');return bits.join(' ')}
-function reportSection(title,items,fallback){const html=items.length?items.map(t=>`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(taskLine(t))}</span></div>`).join(''):`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(fallback)}</span></div>`;const md=items.length?items.map(t=>`- ${taskLine(t)}`).join('\n'):`- ${fallback}`;return{html:`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\">${html}</div></div>`,md:`## ${title}\n${md}`} }
+function taskLine(t,{includeTag=false}={}){const bits=[t.text];if(includeTag&&t.tag)bits.push(`#${t.tag}`);return bits.join(' ')}
+function blockedLine(t){return t.notes?`${t.text} - ${t.notes}`:t.text}
+function reportSection(title,items,fallback,formatter=taskLine){const html=items.length?items.map(t=>`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(formatter(t))}</span></div>`).join(''):`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(fallback)}</span></div>`;const md=items.length?items.map(t=>`- ${formatter(t)}`).join('\n'):`- ${fallback}`;return{html:`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\">${html}</div></div>`,md:`## ${title}\n${md}`} }
 function groupByTag(items){const map=new Map();items.forEach(t=>{const tag=(t.tag||'General').trim()||'General';if(!map.has(tag))map.set(tag,[]);map.get(tag).push(t)});return [...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]))}
-function taggedReportSection(title,items,fallback){if(!items.length){return{html:`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\"><div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(fallback)}</span></div></div></div>`,md:`## ${title}\n- ${fallback}`}}const groups=groupByTag(items);const html=`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\">${groups.map(([tag,list])=>`<div class=\"weekly-group\"><div class=\"weekly-group-header\"><span class=\"weekly-tag-label\">#${esc(tag)}</span><div class=\"weekly-progress-bar\"><div class=\"weekly-progress-fill\" style=\"width:100%;background:rgba(193,244,104,.55)\"></div></div><span class=\"weekly-status-text\" style=\"color:var(--accent)\">${list.length}</span></div>${list.map(t=>`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(taskLine(t))}</span></div>`).join('')}</div>`).join('')}</div></div>`;const md=`## ${title}\n${groups.map(([tag,list])=>`### ${tag}\n${list.map(t=>`- ${taskLine(t)}`).join('\n')}`).join('\n\n')}`;return{html,md}}
+function taggedReportSection(title,items,fallback,formatter=taskLine){if(!items.length){return{html:`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\"><div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(fallback)}</span></div></div></div>`,md:`## ${title}\n- ${fallback}`}}const groups=groupByTag(items);const html=`<div class=\"report-section\"><div class=\"report-section-title\">${esc(title)}</div><div class=\"report-content\">${groups.map(([tag,list])=>`<div class=\"weekly-group\"><div class=\"weekly-group-header\"><span class=\"weekly-tag-label\">#${esc(tag)}</span><div class=\"weekly-progress-bar\"><div class=\"weekly-progress-fill\" style=\"width:100%;background:rgba(193,244,104,.55)\"></div></div><span class=\"weekly-status-text\" style=\"color:var(--accent)\">${list.length}</span></div>${list.map(t=>`<div class=\"report-row\"><span class=\"report-bullet\">•</span><span>${esc(formatter(t))}</span></div>`).join('')}</div>`).join('')}</div></div>`;const md=`## ${title}\n${groups.map(([tag,list])=>`### ${tag}\n${list.map(t=>`- ${formatter(t)}`).join('\n')}`).join('\n\n')}`;return{html,md}}
 function toggleReport(event){const overlay=$('reportOverlay');if(!overlay)return;if(overlay.classList.contains('open')){closeReport();return}if(event){const btn=(event.target.closest('button')||event.target);const rect=btn.getBoundingClientRect();const top=rect.bottom+8;overlay.style.setProperty('--report-top',`${top}px`);$('reportCard').style.top=`${top}px`}reportOpen=true;overlay.classList.add('open');$('reportBtn')?.classList.add('active');document.body.style.overflow='hidden';$('aiToggle')?.classList.toggle('on',aiReportEnabled);setReportType(reportType)}
 function closeReport(){reportOpen=false;$('reportOverlay')?.classList.remove('open');$('reportBtn')?.classList.remove('active');document.body.style.overflow=''}
 function handleReportOverlayClick(e){if(e.target?.id==='reportOverlay')closeReport()}
@@ -58,7 +59,7 @@ async function generateDailyReport(){
   const tomorrowTasks=tasks.filter(t=>t.category==='work'&&!t.done&&!t.blocked&&t.scheduledDate===tmk).sort(cmp);
   const sections=[
     reportSection('Completed Today',completed,'No work tasks completed today.'),
-    reportSection('Blockers',blocked,'No blockers reported.'),
+    reportSection('Blockers',blocked,'No blockers reported.',blockedLine),
     reportSection('Tomorrow',tomorrowTasks,'No work tasks scheduled for tomorrow.')
   ];
   reportText=`# Daily Work Update\n${new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}\n\n${sections.map(s=>s.md).join('\n\n')}`;
@@ -114,7 +115,7 @@ async function generateWeeklyReport(){
   const blocked=tasks.filter(t=>t.category==='work'&&t.blocked).sort(cmp);
   const sections=[
     taggedReportSection('Completed This Week',completed,'No completed work tasks logged this week.'),
-    taggedReportSection('Blocked',blocked,'No blocked work tasks this week.')
+    taggedReportSection('Blocked',blocked,'No blocked work tasks this week.',blockedLine)
   ];
   reportText=`# Weekly Work Update\n${weekLabel()}\n\n${sections.map(s=>s.md).join('\n\n')}`;
   $('reportBody').innerHTML=sections.map(s=>s.html).join('');

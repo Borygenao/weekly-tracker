@@ -416,6 +416,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .archive-action-btn.delete:hover { background:rgba(255,107,107,.08); border-color:#ff9b9b; }
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .build-version { position:fixed; right:12px; bottom:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(232,232,232,.28); letter-spacing:.8px; z-index:20; pointer-events:none; user-select:none; }
+.runtime-error { position:fixed; left:12px; bottom:10px; max-width:min(70vw, 420px); font-family:'Space Mono',monospace; font-size:10px; color:#ffb4b4; background:rgba(64,0,0,.68); border:1px solid rgba(255,120,120,.22); border-radius:8px; padding:6px 8px; z-index:25; display:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
@@ -723,10 +724,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version" id="buildVersion">v0.5.1</div>
+<div class="build-version" id="buildVersion">v0.5.2</div>
+<div class="runtime-error" id="runtimeError"></div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
+const BUILD_VERSION = '0.5.2';
 let supabase = null;
 let supabaseUser = null;
 let supabaseProfile = null;
@@ -734,7 +737,7 @@ let supabaseChannel = null;
 let supabaseAuthBound = false;
 let supabaseSyncBroken = false;
 let supabaseSyncMessage = '';
-let tasks = normalizeLoadedTasks(JSON.parse(localStorage.getItem('wtt_tasks') || '[]'));
+let tasks = normalizeLoadedTasks(safeJsonParse(localStorage.getItem('wtt_tasks'), []));
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
 let settingsOpen = false, reportOpen = false;
@@ -809,6 +812,23 @@ function normalizeLoadedTasks(items) {
 
 function escapeInlineJs(value) {
   return `'${String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function safeJsonParse(raw, fallback) {
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (error) {
+    console.error('JSON parse failed', error);
+    showRuntimeError('Stored data parse failed');
+    return fallback;
+  }
+}
+
+function showRuntimeError(message) {
+  const el = document.getElementById('runtimeError');
+  if (!el) return;
+  el.textContent = `Error: ${message}`;
+  el.style.display = 'block';
 }
 
 function setCloudSyncBroken(message = 'Cloud sync unavailable') {
@@ -3111,6 +3131,18 @@ navigator.serviceWorker?.addEventListener('message', e => {
   }
 });
 
+window.addEventListener('error', e => {
+  const msg = e?.message || 'Unknown runtime error';
+  console.error('Runtime error:', msg, e?.error);
+  showRuntimeError(msg);
+});
+
+window.addEventListener('unhandledrejection', e => {
+  const msg = e?.reason?.message || String(e?.reason || 'Unhandled promise rejection');
+  console.error('Unhandled rejection:', e?.reason);
+  showRuntimeError(msg);
+});
+
 // All done notification — fires instantly when last task completed
 function checkAllDone() {
   if (Notification.permission !== 'granted') return;
@@ -3127,6 +3159,8 @@ function checkAllDone() {
 // ── Init ───────────────────────────────────────────────────────
 render();
 window.addEventListener('load', async () => {
+  const buildEl = document.getElementById('buildVersion');
+  if (buildEl) buildEl.textContent = `v${BUILD_VERSION}`;
   initAIStatus();
   initATH();
   refreshLastSyncUI();

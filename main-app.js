@@ -1,7 +1,7 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.8.3';
+const BUILD='v0.8.4';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';
@@ -71,7 +71,29 @@ async function generateDailyReport(){
       blockedTasks:blocked.map(t=>({task:t.text,notes:t.notes||''})),
       scheduledTomorrow:tomorrowTasks.map(t=>({task:t.text,notes:t.notes||'',priority:t.priority||''}))
     };
-    const report=await claudeCall(`Write a professional daily work update using these exact sections and bullet points only.\n\nCompleted today: ${JSON.stringify(payload.completedToday)}\nBlocked tasks: ${JSON.stringify(payload.blockedTasks)}\nTomorrow tasks: ${JSON.stringify(payload.scheduledTomorrow)}\n\nReturn exactly:\n###COMPLETED###\n- ...\n###BLOCKERS###\n- ...\n###TOMORROW###\n- ...`,700);
+    const report=await claudeCall(`You are writing a concise but manager-ready daily work update.
+
+Use the task data below to produce a noticeably more polished report than a raw task list.
+
+Completed today: ${JSON.stringify(payload.completedToday)}
+Blocked tasks: ${JSON.stringify(payload.blockedTasks)}
+Tomorrow tasks: ${JSON.stringify(payload.scheduledTomorrow)}
+
+Requirements:
+- Keep the tone professional and specific.
+- Do not repeat the task list mechanically.
+- For completed work, summarize outcomes or progress where possible.
+- For blockers, explain the issue or impact if notes suggest one.
+- For tomorrow, frame the tasks as next steps or priorities.
+- Keep bullets concise, usually one sentence each.
+
+Return exactly:
+###COMPLETED###
+- ...
+###BLOCKERS###
+- ...
+###TOMORROW###
+- ...`,900);
     const parse=(start,end,fallback)=>{
       const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));
       const lines=m?fixGrammarLines(m[1].trim().split('\n').map(l=>l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean)):[fallback];
@@ -104,7 +126,27 @@ async function generateWeeklyReport(){
       completed:completed.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''})),
       blocked:blocked.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''}))
     };
-    const report=await claudeCall(`Write a professional weekly work update grouped by project tag. Use only these exact sections.\n\nWeek: ${payload.weekLabel}\nCompleted: ${JSON.stringify(payload.completed)}\nBlocked: ${JSON.stringify(payload.blocked)}\n\nReturn exactly:\n###COMPLETED###\n### tag-name\n- ...\n###BLOCKED###\n### tag-name\n- ...`,900);
+    const report=await claudeCall(`You are writing a professional weekly work update for stakeholders.
+
+Week: ${payload.weekLabel}
+Completed: ${JSON.stringify(payload.completed)}
+Blocked: ${JSON.stringify(payload.blocked)}
+
+Requirements:
+- Group the report by project tag.
+- Make the report feel meaningfully different from a raw task dump.
+- Under each project, summarize completed progress in a polished way.
+- Under blocked, explain what is stuck and why it matters when notes provide context.
+- Keep the writing concise and clear.
+- Use short stakeholder-friendly bullets, not just copied task names.
+
+Return exactly:
+###COMPLETED###
+### tag-name
+- ...
+###BLOCKED###
+### tag-name
+- ...`,1000);
     const parseTagged=(start,end,fallback)=>{
       const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));
       if(!m)return {html:`<div class="report-row"><span class="report-bullet">•</span><span>${esc(fallback)}</span></div>`,md:`- ${fallback}`};

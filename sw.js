@@ -1,7 +1,8 @@
-const CACHE = 'weekly-v51';
+const CACHE = 'weekly-v54';
 const ASSETS = [
   '/weekly-tracker/',
   '/weekly-tracker/index.html',
+  '/weekly-tracker/dev.html',
   '/weekly-tracker/icon-192.png',
   '/weekly-tracker/icon-512.png',
   '/weekly-tracker/apple-touch-icon.png',
@@ -33,7 +34,8 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(req, { cache: 'no-store' }).then(res => {
         if (res && res.status === 200) {
-          caches.open(CACHE).then(c => c.put(req, res.clone()));
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
       }).catch(() => caches.match(req).then(r => r || caches.match('/weekly-tracker/index.html')))
@@ -45,7 +47,8 @@ self.addEventListener('fetch', e => {
     caches.match(req).then(cached => {
       const network = fetch(req).then(res => {
         if (res && res.status === 200) {
-          caches.open(CACHE).then(c => c.put(req, res.clone()));
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
       }).catch(() => cached);

@@ -741,7 +741,7 @@ const SYNC_POLL_MS = 60000;
 let syncPromise = null;
 let syncTimer = null;
 const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('wtt-sync') : null;
-let supabase = null;
+let supabaseClient = null;
 let supabaseUser = null;
 let supabaseChannel = null;
 
@@ -2621,11 +2621,11 @@ function saveProxyUrl() {
 
 // ── Monthly Calendar ──────────────────────────────────────────
 function createSupabaseClient() {
-  if (supabase) return supabase;
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  if (supabaseClient) return supabaseClient;
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
   });
-  return supabase;
+  return supabaseClient;
 }
 
 function normalizeCloudTask(task) {
@@ -2871,9 +2871,9 @@ async function supabaseSignOut() {
 }
 
 function subscribeToRealtime() {
-  if (!supabase || !supabaseUser) return;
-  if (supabaseChannel) supabase.removeChannel(supabaseChannel);
-  supabaseChannel = supabase
+  if (!supabaseClient || !supabaseUser) return;
+  if (supabaseChannel) supabaseClient.removeChannel(supabaseChannel);
+  supabaseChannel = supabaseClient
     .channel('dev-tasks')
     .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TASKS_TABLE }, () => {
       refreshFromSource('realtime').catch(() => {});

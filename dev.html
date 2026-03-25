@@ -28,8 +28,7 @@
 <meta name="description" content="Weekly task tracker with daily and weekly reports">
 <link rel="manifest" href="/weekly-tracker/manifest.json">
 <link rel="apple-touch-icon" href="/weekly-tracker/apple-touch-icon.png">
-<script src="https://accounts.google.com/gsi/client"></script>
-<script src="https://apis.google.com/js/api.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -495,7 +494,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
         <div class="settings-hint" style="margin-top:6px">Used for AI requests and connection checks.</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
-        <div class="settings-label">Google Sync</div>
+        <div class="settings-label">Cloud Sync</div>
         <div class="sync-settings-row" id="syncSettingsRow">
           <!-- populated by JS -->
         </div>
@@ -619,7 +618,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     </div>
     <input class="archive-search" id="archiveSearch" type="text" placeholder="Search archived tasks..." oninput="renderArchive(archiveData)">
     <div class="archive-body" id="archiveBody"></div>
-    <div class="archive-note" id="archiveNote">Archived tasks are kept locally and synced to Google Sheets when connected.</div>
+<div class="archive-note" id="archiveNote">Archived tasks come from Supabase in this dev build.</div>
   </div>
 </div>
 
@@ -724,21 +723,27 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version">v0.5.5-dev</div>
+<div class="build-version">v0.6.3-dev</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
-let tasks = JSON.parse(localStorage.getItem('wtt_tasks') || '[]');
+let tasks = [];
 let filter = 'all', category = 'all', newTaskCat = 'work';
 let activeTaskId = null;
 let settingsOpen = false, reportOpen = false;
 let reportText = '';
 let pendingScheduleDate = null;
 let pendingPriority = 'medium';
+const SUPABASE_URL = 'https://zylbttyclmkzkrlpdyzw.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
+const SUPABASE_TASKS_TABLE = 'tasks';
 const SYNC_POLL_MS = 60000;
 let syncPromise = null;
 let syncTimer = null;
 const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('wtt-sync') : null;
+let supabase = null;
+let supabaseUser = null;
+let supabaseChannel = null;
 
 const taskInput = document.getElementById('taskInput');
 taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
@@ -789,6 +794,10 @@ function shortDay(d) {
 
 function shortDate(d) {
   return `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+function createTaskId() {
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
 }
 
 // ── Settings ───────────────────────────────────────────────────
@@ -2611,6 +2620,530 @@ function saveProxyUrl() {
 
 
 // ── Monthly Calendar ──────────────────────────────────────────
+function createSupabaseClient() {
+  if (supabase) return supabase;
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  });
+  return supabase;
+}
+
+function normalizeCloudTask(task) {
+  return {
+    ...normalizeTaskForSync(task),
+    userId: task.userId || task.user_id || supabaseUser?.id || null,
+    ownerEmail: task.ownerEmail || task.owner_email || supabaseUser?.email || null,
+    archivedAt: task.archivedAt ?? task.archived_at ?? null,
+    archivedDate: task.archivedDate ?? task.archived_date ?? null,
+    deletedAt: task.deletedAt ?? task.deleted_at ?? null
+  };
+}
+
+function taskToDbRow(task) {
+  const t = normalizeCloudTask(task);
+  return {
+    id: String(t.id),
+    user_id: t.userId,
+    owner_email: t.ownerEmail,
+    text: t.text || '',
+    category: t.category || 'work',
+    done: !!t.done,
+    blocked: !!t.blocked,
+    priority: t.priority || 'medium',
+    scheduled_date: t.scheduledDate || null,
+    notes: t.notes || '',
+    created_at: Number(t.createdAt || Date.now()),
+    completed_at: t.completedAt ? Number(t.completedAt) : null,
+    updated_at: Number(t.updatedAt || t.createdAt || Date.now()),
+    tag: t.tag || null,
+    sort_order: t.sortOrder == null ? Number(t.createdAt || Date.now()) : Number(t.sortOrder),
+    archived_at: t.archivedAt ? Number(t.archivedAt) : null,
+    archived_date: t.archivedDate || null,
+    deleted_at: t.deletedAt ? Number(t.deletedAt) : null
+  };
+}
+
+function dbRowToTask(row) {
+  return normalizeCloudTask({
+    id: /^\d+$/.test(String(row.id)) ? parseInt(row.id, 10) : row.id,
+    text: row.text || '',
+    category: row.category || 'work',
+    done: !!row.done,
+    blocked: !!row.blocked,
+    priority: row.priority || 'medium',
+    scheduledDate: row.scheduled_date || null,
+    notes: row.notes || '',
+    createdAt: Number(row.created_at || Date.now()),
+    completedAt: row.completed_at ? Number(row.completed_at) : null,
+    updatedAt: Number(row.updated_at || row.created_at || Date.now()),
+    tag: row.tag || null,
+    sortOrder: row.sort_order == null ? Number(row.created_at || Date.now()) : Number(row.sort_order),
+    archivedAt: row.archived_at ? Number(row.archived_at) : null,
+    archivedDate: row.archived_date || null,
+    deletedAt: row.deleted_at ? Number(row.deleted_at) : null,
+    userId: row.user_id || null,
+    ownerEmail: row.owner_email || null
+  });
+}
+
+function rowTimestamp(row) {
+  return Math.max(Number(row.deleted_at || 0), Number(row.archived_at || 0), Number(row.updated_at || 0), Number(row.completed_at || 0), Number(row.created_at || 0));
+}
+
+function mergeCloudRows(localRows, remoteRows) {
+  const merged = new Map();
+  for (const row of [...remoteRows, ...localRows]) {
+    if (!row?.id) continue;
+    const current = merged.get(String(row.id));
+    if (!current || rowTimestamp(row) >= rowTimestamp(current)) merged.set(String(row.id), row);
+  }
+  return [...merged.values()];
+}
+
+async function fetchCloudRows() {
+  if (!supabaseUser) return [];
+  const client = createSupabaseClient();
+  const { data, error } = await client.from(SUPABASE_TASKS_TABLE).select('*').order('updated_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function upsertCloudRows(rows) {
+  if (!rows.length) return;
+  const client = createSupabaseClient();
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200);
+    const { error } = await client.from(SUPABASE_TASKS_TABLE).upsert(chunk, { onConflict: 'id' });
+    if (error) throw error;
+  }
+}
+
+function buildLocalRows() {
+  const rows = [];
+  for (const task of tasks) rows.push(taskToDbRow(task));
+  for (const archived of getLocalArchiveCache()) rows.push(taskToDbRow(archived));
+  for (const [id, ts] of Object.entries(getTombstones())) {
+    rows.push({
+      id: String(id),
+      user_id: supabaseUser?.id || null,
+      owner_email: supabaseUser?.email || null,
+      text: '',
+      category: 'work',
+      done: false,
+      blocked: false,
+      priority: 'medium',
+      scheduled_date: null,
+      notes: '',
+      created_at: Number(ts || Date.now()),
+      completed_at: null,
+      updated_at: Number(ts || Date.now()),
+      tag: null,
+      sort_order: Number(ts || Date.now()),
+      archived_at: null,
+      archived_date: null,
+      deleted_at: Number(ts || Date.now())
+    });
+  }
+  return rows;
+}
+
+function persistCloudState(rows) {
+  const nextTasks = [];
+  const nextArchive = [];
+  const nextTombstones = {};
+  for (const row of rows) {
+    if (!row?.id) continue;
+    if (row.deleted_at) {
+      nextTombstones[String(row.id)] = Number(row.deleted_at);
+      continue;
+    }
+    const task = dbRowToTask(row);
+    if (row.archived_at) {
+      nextArchive.push({
+        ...task,
+        done: true,
+        archivedAt: Number(row.archived_at),
+        archivedDate: row.archived_date || toDateKey(new Date(Number(row.archived_at))),
+        _archiveKey: `${row.id}:${row.archived_at || 0}`
+      });
+    } else {
+      nextTasks.push(task);
+    }
+  }
+  nextTasks.sort((a, b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+  nextArchive.sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  tasks = nextTasks;
+  archiveData = nextArchive;
+  localStorage.setItem('wtt_tasks', JSON.stringify(nextTasks));
+  localStorage.setItem('wtt_archivecache', JSON.stringify(nextArchive));
+  localStorage.setItem('wtt_tombstones', JSON.stringify(nextTombstones));
+  syncCalendarArchiveCache(nextArchive);
+  updateArchiveButton();
+  render();
+  renderCalendar();
+  if (archiveOpen) renderArchive(archiveData);
+}
+
+function requireCloudAccess(actionLabel = 'change tasks') {
+  if (!supabaseUser) {
+    showSyncIndicator(`Sign in to ${actionLabel}`);
+    if (!settingsOpen) toggleSettings();
+    return false;
+  }
+  return true;
+}
+
+async function renderSyncSettings() {
+  const row = document.getElementById('syncSettingsRow');
+  if (!row) return;
+  refreshLastSyncUI();
+  if (supabaseUser) {
+    row.innerHTML = `<div class="sync-status"><div class="sync-dot on"></div><span>Supabase Â· ${escapeHtml(supabaseUser.email || 'signed in')}</span></div><button class="btn-sm" onclick="syncNow()">Sync now</button><button class="btn-signout" onclick="supabaseSignOut()">Sign out</button>`;
+  } else {
+    row.innerHTML = `<div class="sync-status"><div class="sync-dot"></div><span>Supabase dev sync is signed out</span></div><button class="google-btn" onclick="supabaseSignIn()">Sign in</button>`;
+  }
+}
+
+function schedulePeriodicSync() {
+  if (syncTimer) clearInterval(syncTimer);
+  syncTimer = setInterval(() => {
+    if (supabaseUser && document.visibilityState === 'visible') refreshFromSource('interval').catch(() => {});
+  }, SYNC_POLL_MS);
+}
+
+async function refreshFromSource(reason = 'manual') {
+  if (!supabaseUser) { refreshLastSyncUI(); return false; }
+  const rows = await fetchCloudRows();
+  persistCloudState(rows);
+  await setLastSynced(Date.now(), reason);
+  renderSyncSettings();
+  return true;
+}
+
+async function runFullSync(reason = 'manual') {
+  if (!supabaseUser) return false;
+  if (syncPromise) return syncPromise;
+  syncPromise = (async () => {
+    const localRows = buildLocalRows();
+    const remoteRows = await fetchCloudRows();
+    const mergedRows = mergeCloudRows(localRows, remoteRows);
+    await upsertCloudRows(mergedRows);
+    const freshRows = await fetchCloudRows();
+    persistCloudState(freshRows);
+    await setLastSynced(Date.now(), reason);
+    announceSync(reason);
+    showSyncIndicator('âœ“ Synced');
+    renderSyncSettings();
+    return true;
+  })().finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+
+function scheduleFullSync(reason = 'mutation') {
+  if (!supabaseUser) return;
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  syncDebounceTimer = setTimeout(() => { runFullSync(reason).catch(() => {}); }, 500);
+}
+
+function pushIfConnected(reason = 'mutation') {
+  scheduleFullSync(reason);
+}
+
+function syncNow() {
+  runFullSync('manual').catch(() => refreshFromSource('manual').catch(() => {}));
+}
+
+async function supabaseSignIn() {
+  const client = createSupabaseClient();
+  const { error } = await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}${window.location.pathname}` }
+  });
+  if (error) showSyncIndicator(error.message || 'Sign-in failed');
+}
+
+async function supabaseSignOut() {
+  const client = createSupabaseClient();
+  await client.auth.signOut();
+}
+
+function subscribeToRealtime() {
+  if (!supabase || !supabaseUser) return;
+  if (supabaseChannel) supabase.removeChannel(supabaseChannel);
+  supabaseChannel = supabase
+    .channel('dev-tasks')
+    .on('postgres_changes', { event: '*', schema: 'public', table: SUPABASE_TASKS_TABLE }, () => {
+      refreshFromSource('realtime').catch(() => {});
+    })
+    .subscribe();
+}
+
+async function initSupabaseSync() {
+  const client = createSupabaseClient();
+  const { data, error } = await client.auth.getSession();
+  if (error) throw error;
+  supabaseUser = data.session?.user || null;
+  renderSyncSettings();
+  if (supabaseUser) {
+    subscribeToRealtime();
+    await refreshFromSource('startup');
+    showSyncIndicator('âœ“ Connected');
+  }
+  client.auth.onAuthStateChange(async (_event, session) => {
+    supabaseUser = session?.user || null;
+    renderSyncSettings();
+    if (supabaseUser) {
+      subscribeToRealtime();
+      await refreshFromSource('auth');
+    } else {
+      tasks = [];
+      archiveData = [];
+      setLocalArchiveCache([]);
+      localStorage.removeItem('wtt_tasks');
+      localStorage.removeItem('wtt_archivecache');
+      localStorage.removeItem('wtt_tombstones');
+      render();
+      renderCalendar();
+    }
+  });
+  schedulePeriodicSync();
+}
+
+async function archiveTasks(taskList) {
+  if (!taskList.length) return;
+  const now = Date.now();
+  const nowDate = toDateKey(new Date(now));
+  const existing = getLocalArchiveCache();
+  const archiveEntries = taskList.map(t => ({
+    ...normalizeCloudTask(t),
+    done: true,
+    blocked: false,
+    completedAt: t.completedAt || now,
+    updatedAt: now,
+    archivedAt: now,
+    archivedDate: nowDate,
+    _archiveKey: `${t.id}:${now}`
+  }));
+  const deduped = [...archiveEntries, ...existing.filter(old => !archiveEntries.some(entry => entry.id === old.id))]
+    .sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  setLocalArchiveCache(deduped);
+  syncCalendarArchiveCache(deduped);
+  archiveData = deduped;
+  if (archiveOpen) renderArchive(archiveData);
+  showSyncIndicator(`âœ“ ${taskList.length} task${taskList.length!==1?'s':''} archived`);
+}
+
+async function loadArchive() {
+  if (!supabaseUser) return [];
+  const rows = await fetchCloudRows();
+  const result = rows
+    .filter(row => row.archived_at && !row.deleted_at)
+    .map(dbRowToTask)
+    .map(t => ({
+      ...t,
+      done: true,
+      archivedAt: t.archivedAt,
+      archivedDate: t.archivedDate || toDateKey(new Date(t.archivedAt || Date.now())),
+      _archiveKey: `${t.id}:${t.archivedAt || 0}`
+    }))
+    .sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  setLocalArchiveCache(result);
+  syncCalendarArchiveCache(result);
+  return result;
+}
+
+async function restoreArchivedTask(archiveKey) {
+  if (!requireCloudAccess('restore archived tasks')) return;
+  const cached = getLocalArchiveCache();
+  const task = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  if (!task) return;
+  tasks.unshift({
+    ...task,
+    done: false,
+    blocked: false,
+    completedAt: null,
+    archivedAt: null,
+    archivedDate: null,
+    updatedAt: Date.now()
+  });
+  const remaining = cached.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
+  setLocalArchiveCache(remaining);
+  syncCalendarArchiveCache(remaining);
+  archiveData = remaining;
+  save();
+  render();
+  renderArchive(archiveData);
+  pushIfConnected('restore-archive');
+  showSyncIndicator('âœ“ Restored from archive');
+}
+
+async function deleteArchivedTask(archiveKey) {
+  if (!requireCloudAccess('delete archived tasks')) return;
+  const cached = getLocalArchiveCache();
+  const target = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  if (!target) return;
+  setTombstone(target.id, Date.now());
+  const remaining = cached.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
+  setLocalArchiveCache(remaining);
+  syncCalendarArchiveCache(remaining);
+  archiveData = remaining;
+  render();
+  renderArchive(archiveData);
+  pushIfConnected('delete-archive');
+  showSyncIndicator('âœ“ Removed from archive');
+}
+
+async function editArchivedTaskDate(archiveKey) {
+  if (!requireCloudAccess('edit archive date')) return;
+  const cached = getLocalArchiveCache();
+  const match = cached.find(t => (t._archiveKey || String(t.id)) === String(archiveKey));
+  if (!match) return;
+  const initial = match.archivedDate || toDateKey(new Date(match.archivedAt || Date.now()));
+  const nextDate = window.prompt('Edit archive date (YYYY-MM-DD)', initial);
+  if (nextDate == null) return;
+  const trimmed = nextDate.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    alert('Please enter the date as YYYY-MM-DD.');
+    return;
+  }
+  const parsed = new Date(trimmed + 'T12:00:00');
+  if (Number.isNaN(parsed.getTime())) {
+    alert('That date is not valid.');
+    return;
+  }
+  const updated = cached.map(t => {
+    if ((t._archiveKey || String(t.id)) !== String(archiveKey)) return t;
+    return { ...t, archivedDate: trimmed, archivedAt: parsed.getTime(), updatedAt: Date.now(), _archiveKey: `${t.id}:${parsed.getTime()}` };
+  }).sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  setLocalArchiveCache(updated);
+  syncCalendarArchiveCache(updated);
+  archiveData = updated;
+  render();
+  renderArchive(archiveData);
+  pushIfConnected('edit-archive-date');
+  showSyncIndicator('âœ“ Archive date updated');
+}
+
+async function addTask() {
+  if (!requireCloudAccess('add tasks')) return;
+  const text = taskInput.value.trim(); if (!text) return;
+  const id = createTaskId();
+  const task = { id, text, done:false, category:newTaskCat, createdAt:id, completedAt:null, scheduledDate:null, priority:'detecting', notes:'', blocked:false, tag:null, sortOrder:id, updatedAt:id, userId:supabaseUser?.id || null, ownerEmail:supabaseUser?.email || null };
+  tasks.unshift(task); taskInput.value = '';
+  save(); render();
+  pushIfConnected('add-task');
+  openModal(id);
+  const p = await detectPriority(text, newTaskCat);
+  const t = tasks.find(t=>t.id===id);
+  if (t && t.priority === 'detecting') { t.priority = p||'medium'; t.updatedAt = Date.now(); save(); render(); pushIfConnected('priority-detect'); }
+}
+
+function toggleTask(id) {
+  if (!requireCloudAccess('update tasks')) return;
+  const t = tasks.find(t=>t.id===id); if (!t) return;
+  if (!t.done && !t.blocked) {
+    t.done = true; t.blocked = false; t.completedAt = Date.now();
+  } else if (t.done && !t.blocked) {
+    t.done = false; t.blocked = true; t.completedAt = null;
+  } else {
+    t.done = false; t.blocked = false; t.completedAt = null;
+  }
+  t.updatedAt = Date.now();
+  render();
+  requestAnimationFrame(() => {
+    save();
+    pushIfConnected('toggle-task');
+    if (t.done) { checkAllDone(); maybeAutoArchiveTask(t.id); }
+  });
+}
+
+function deleteTask(id) {
+  if (!requireCloudAccess('delete tasks')) return;
+  setTombstone(id, Date.now());
+  tasks = tasks.filter(t=>t.id!==id);
+  save();
+  render();
+  pushIfConnected('delete-task');
+}
+
+async function clearDone() {
+  if (!requireCloudAccess('archive completed tasks')) return;
+  const toArchive = tasks.filter(t => t.done && !t.blocked && (category==='all' || t.category===category));
+  if (toArchive.length === 0) return;
+  const stamp = Date.now();
+  toArchive.forEach(t => setTombstone(t.id, stamp));
+  tasks = tasks.filter(t => !toArchive.find(a => a.id === t.id));
+  save();
+  render();
+  await archiveTasks(toArchive);
+  pushIfConnected('archive-completed');
+}
+
+function setTaskBlockedState(id, blocked) {
+  if (!requireCloudAccess(blocked ? 'block tasks' : 'unblock tasks')) return;
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  t.blocked = !!blocked;
+  if (blocked) {
+    t.done = false;
+    t.completedAt = null;
+  }
+  t.updatedAt = Date.now();
+  save();
+  render();
+  pushIfConnected('task-block-state');
+  closeActionMenu();
+}
+
+async function archiveSingleTask(id, fromAuto=false) {
+  if (!requireCloudAccess('archive tasks')) return;
+  const found = tasks.find(x => x.id === id);
+  if (!found) return;
+  if (found.blocked) {
+    showSyncIndicator('Blocked tasks cannot be archived');
+    return;
+  }
+  const now = Date.now();
+  const archivedTask = { ...found, done: true, blocked: false, completedAt: found.completedAt || now, updatedAt: now };
+  setTombstone(archivedTask.id, now);
+  tasks = tasks.filter(x => x.id !== id);
+  save();
+  render();
+  await archiveTasks([archivedTask]);
+  pushIfConnected('archive-single');
+  if (!fromAuto) showSyncIndicator('âœ“ Task archived');
+  closeActionMenu();
+}
+
+async function saveModal() {
+  if (!requireCloudAccess('save tasks')) return;
+  const t = tasks.find(t=>t.id===activeTaskId);
+  if (t) {
+    const oldNotes = t.notes || '';
+    const oldPriority = t.priority;
+    const newTitle = document.getElementById('modalTitleInput').value.trim();
+    if (newTitle) t.text = newTitle.replace(/#[a-zA-Z0-9_-]+/g, '').trim() || newTitle;
+    const tagVal = document.getElementById('tagInput').value.trim().replace(/^#+/, '').replace(/[\s]+/g, '-').toLowerCase();
+    t.tag = tagVal || null;
+    t.notes = document.getElementById('notesArea').value.trim();
+    t.scheduledDate = pendingScheduleDate;
+    t.priority = pendingPriority;
+    t.updatedAt = Date.now();
+    save();
+    render();
+    pushIfConnected('save-modal');
+    if (t.notes !== oldNotes && t.priority === oldPriority && !t.done && !t.blocked) {
+      const combined = `${t.text}. ${t.notes}`;
+      const p = await detectPriority(combined, t.category);
+      if (p) { t.priority = p; t.updatedAt = Date.now(); save(); render(); pushIfConnected('priority-detect'); }
+    }
+  }
+  closeModal();
+}
+
 let calOpen = false;
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
@@ -2986,9 +3519,9 @@ function renderArchive(data) {
   ) : data;
 
   const note = document.getElementById('archiveNote');
-  if (note) note.textContent = sheetId && isTokenValid()
-    ? 'Archived tasks are synced to Google Sheets and cached locally for quick access.'
-    : 'Showing your local archive cache. Connect Google Sync to back it up to Sheets.';
+  if (note) note.textContent = supabaseUser
+    ? 'Archived tasks are synced through Supabase and cached locally for quick access.'
+    : 'Sign in to load your Supabase archive.';
 
   if (filtered.length === 0) {
     body.innerHTML = `<div class="report-generating">${search ? 'No results.' : 'No archived tasks yet.'}</div>`;
@@ -3225,9 +3758,9 @@ window.addEventListener('load', async () => {
   initAIStatus();
   initATH();
   refreshLastSyncUI();
-  archiveData = await loadArchive().catch(() => getLocalArchiveCache());
+  archiveData = await loadArchive().catch(() => []);
   renderCalendar();
-  setTimeout(initGoogleSync, 1000);
+  setTimeout(() => initSupabaseSync().catch(err => showSyncIndicator(err?.message || 'Supabase init failed')), 1000);
   setTimeout(initNotifications, 1500);
   schedulePeriodicSync();
   if ('serviceWorker' in navigator) {
@@ -3263,7 +3796,7 @@ document.addEventListener('visibilitychange', async () => {
     refreshFromSource('foreground').catch(() => {});
   }
   if (document.visibilityState === 'hidden') {
-    if (sheetId && isTokenValid()) {
+    if (supabaseUser) {
       runFullSync('background').catch(() => {});
     }
   }

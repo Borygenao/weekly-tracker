@@ -550,7 +550,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
     <div class="task-input-wrap">
       <input type="text" id="taskInput" placeholder="Add a task..." maxlength="120" autocomplete="off" autocorrect="on">
     </div>
-    <button class="add-btn" onclick="addTask()">+ ADD</button>
+    <button class="add-btn" id="addBtn" onclick="addTask()">+ ADD</button>
   </div>
 
   <!-- Task Options + Status filter dropdown on same row -->
@@ -591,7 +591,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   <!-- Bottom bar -->
   <div class="bottom-bar">
     <button class="clear-btn" id="clearBtn" onclick="clearDone()">Archive completed (0)</button>
-    <button class="archive-btn" onclick="toggleArchive()">📦 Archive</button>
+    <button class="archive-btn" id="archiveBtn" onclick="toggleArchive()">📦 Archive</button>
   </div>
 
   <!-- Report panel -->
@@ -743,7 +743,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version">v0.6.1</div>
+<div class="build-version">v0.6.2</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
@@ -776,6 +776,27 @@ let importTokenExpiry = 0;
 
 const taskInput = document.getElementById('taskInput');
 taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+let coreControlsBound = false;
+
+function bindCoreControls() {
+  if (coreControlsBound) return;
+  coreControlsBound = true;
+
+  const bindClick = (id, handler) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', event => {
+      event.preventDefault();
+      handler(event);
+    });
+  };
+
+  bindClick('settingsBtn', () => toggleSettings());
+  bindClick('calBtn', () => toggleCalendar());
+  bindClick('addBtn', () => addTask());
+  bindClick('clearBtn', () => clearDone());
+  bindClick('archiveBtn', () => toggleArchive());
+}
 
 // ── Date utils ─────────────────────────────────────────────────
 function toDateKey(date) {
@@ -4090,6 +4111,7 @@ function checkAllDone() {
 // ── Init ───────────────────────────────────────────────────────
 render();
 window.addEventListener('load', async () => {
+  bindCoreControls();
   initAIStatus();
   initATH();
   refreshLastSyncUI();

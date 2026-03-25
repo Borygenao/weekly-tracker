@@ -200,21 +200,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .task-item.cat-work { border-left:3px solid rgba(124,156,255,.45); }
 .task-item.cat-personal { border-left:3px solid rgba(240,122,255,.45); }
 .task-item.blocked { border-left:3px solid rgba(255,92,92,.5) !important; }
-.task-item.drag-over { border-color:var(--accent); background:rgba(200,241,53,.04); }
-.task-item.dragging { opacity:.4; }
-
-/* drag handle */
-.drag-handle { color:var(--muted2); font-size:14px; cursor:grab; padding:0 2px; flex-shrink:0; touch-action:none; line-height:1; }
-.drag-handle:active { cursor:grabbing; }
-
-.checkbox { width:44px; height:44px; display:flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer; margin:-10px; padding:10px; -webkit-tap-highlight-color:transparent; }
-.checkbox-inner { width:22px; height:22px; border:2px solid var(--border); border-radius:5px; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s, border-color .15s; }
-.task-item.done .checkbox-inner { background:var(--accent); border-color:var(--accent); }
-.task-item.blocked .checkbox-inner { background:rgba(255,92,92,.15); border-color:var(--high); }
-.checkbox .icon-check { display:none; }
-.checkbox .icon-block { display:none; }
-.task-item.done .checkbox .icon-check { display:block; }
-.task-item.blocked .checkbox .icon-block { display:block; color:var(--high); font-size:12px; font-weight:700; }
 
 .task-body { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
 .task-text { font-size:14px; line-height:1.35; word-break:break-word; }
@@ -249,9 +234,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .task-item.swipe-right { background:linear-gradient(90deg, rgba(193,244,104,.12), rgba(193,244,104,0) 65%), var(--surface); }
 .task-item.swipe-left { background:linear-gradient(270deg, rgba(255,107,107,.14), rgba(255,107,107,0) 65%), var(--surface); }
 .task-item.swipe-right::before, .task-item.swipe-left::after { opacity:1; }
-.task-menu-btn, .archive-menu-btn { background:none; border:1px solid var(--border); color:var(--muted); width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:18px; line-height:1; cursor:pointer; transition:all .2s; }
-.task-menu-btn:hover, .archive-menu-btn:hover { border-color:rgba(193,244,104,.32); color:var(--accent); background:rgba(193,244,104,.05); }
-.task-menu-btn:active, .archive-menu-btn:active { transform:scale(.96); }
+.archive-menu-btn { background:none; border:1px solid var(--border); color:var(--muted); width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:18px; line-height:1; cursor:pointer; transition:all .2s; }
+.archive-menu-btn:hover { border-color:rgba(193,244,104,.32); color:var(--accent); background:rgba(193,244,104,.05); }
+.archive-menu-btn:active { transform:scale(.96); }
 .archive-item-header { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
 .archive-blocked-badge { font-family:'Space Mono',monospace; font-size:8px; font-weight:700; color:var(--high); background:rgba(255,92,92,.12); border:1px solid rgba(255,92,92,.2); padding:1px 5px; border-radius:99px; }
 .workflow-row { display:flex; align-items:center; gap:8px; }
@@ -354,6 +339,14 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
 .tag-option-count { margin-left:auto; color:var(--muted); font-size:9px; }
 
 .modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-bottom:4px; }
+.modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.btn-modal-action { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:11px; padding:11px 14px; border-radius:10px; cursor:pointer; min-height:40px; transition:all .2s; }
+.btn-modal-action.accent { border-color:rgba(193,244,104,.25); color:var(--accent); }
+.btn-modal-action.danger { border-color:rgba(255,107,107,.25); color:#ffb0b0; }
+.btn-modal-action:hover { border-color:var(--text); color:var(--text); }
+.btn-modal-action.accent:hover { border-color:var(--accent); color:var(--accent); background:rgba(193,244,104,.05); }
+.btn-modal-action.danger:hover { border-color:#ff8a8a; color:#ffd0d0; background:rgba(255,107,107,.05); }
+.btn-modal-action:disabled { opacity:.45; cursor:not-allowed; }
 .btn-save { background:var(--accent); color:#0d0d0d; border:none; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:14px 24px; border-radius:10px; cursor:pointer; min-height:var(--touch); transition:background .2s; }
 .btn-save:active { background:var(--accent-dim); }
 .btn-cancel { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:14px 18px; border-radius:10px; cursor:pointer; min-height:var(--touch); }
@@ -532,8 +525,6 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
             <input type="time" id="eveningTime" class="time-input" value="17:00" onchange="saveNotifSettings()">
           </div>
         </div>
-      </div>
-    </div>
   </div>
 
   <!-- Category Tabs — slimmer pill style -->
@@ -720,6 +711,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
       <textarea class="notes-area" id="notesArea" placeholder="Type your notes — what you did, blockers, next steps..."></textarea>
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Auto-fill</button>
     </div>
+
+    <div class="modal-actions" id="modalActions"></div>
 
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -1645,6 +1638,7 @@ function openModal(id, isNewWork = false) {
     ${t.completedAt?`<div class="modal-ts ts-done"><div class="modal-ts-label">Done</div><div class="modal-ts-value">${formatTime(t.completedAt)}</div></div>`:''}
     ${t.scheduledDate?`<div class="modal-ts"><div class="modal-ts-label">Scheduled</div><div class="modal-ts-value">${formatDateKey(t.scheduledDate)}</div></div>`:''}
   `;
+  renderModalTaskActions(t);
 
   document.getElementById('modalOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1654,6 +1648,35 @@ function closeModal() {
   document.getElementById('modalOverlay').classList.remove('open');
   document.body.style.overflow = '';
   activeTaskId = null; pendingScheduleDate = null;
+}
+
+function renderModalTaskActions(task) {
+  const row = document.getElementById('modalActions');
+  if (!row) return;
+  row.innerHTML = `
+    <button class="btn-modal-action accent" onclick="modalArchiveTask()" ${task.blocked ? 'disabled' : ''}>Archive</button>
+    <button class="btn-modal-action" onclick="modalToggleBlocked()">${task.blocked ? 'Unblock' : 'Block'}</button>
+    <button class="btn-modal-action danger" onclick="modalDeleteTask()">Delete</button>
+  `;
+}
+
+function modalArchiveTask() {
+  const id = activeTaskId;
+  closeModal();
+  archiveSingleTask(id).catch(() => {});
+}
+
+function modalToggleBlocked() {
+  const t = tasks.find(x => x.id === activeTaskId);
+  if (!t) return;
+  closeModal();
+  setTaskBlockedState(t.id, !t.blocked);
+}
+
+function modalDeleteTask() {
+  const id = activeTaskId;
+  closeModal();
+  askDelete(id);
 }
 
 async function saveModal() {
@@ -1844,7 +1867,7 @@ function render() {
   renderGroup('Unscheduled', unscheduled);
 
   container.innerHTML = html;
-  initDrag(); // attach touch drag to handles
+  initTaskInteractions();
 }
 
 function renderTask(t, isOverdue=false) {
@@ -1855,15 +1878,7 @@ function renderTask(t, isOverdue=false) {
   const stateClass = t.done ? 'done' : t.blocked ? 'blocked' : '';
   const overdueClass = isOverdue && !t.blocked ? ' overdue-item' : '';
   const blockedBadge = t.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
-  return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" draggable="true" data-id="${t.id}"
-      ondragstart="dragStart(event,${t.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${t.id})" ondragend="dragEnd(event)"
-      onclick="handleTaskTap(event,${t.id})">
-    <div class="checkbox" onclick="event.stopPropagation();toggleTask(${t.id})">
-      <div class="checkbox-inner">
-        <span class="icon-check"><svg width="11" height="9" viewBox="0 0 12 10" fill="none"><path d="M1 5L4.5 8.5L11 1.5" stroke="#0d0d0d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <span class="icon-block">✕</span>
-      </div>
-    </div>
+  return `<div class="task-item ${stateClass} cat-${cat}${overdueClass}" data-id="${t.id}" onclick="handleTaskTap(event,${t.id})">
     <div class="task-body">
       <div class="task-text${noteClass}">${escapeHtml(t.text)}</div>
       <div class="task-meta">
@@ -1877,7 +1892,6 @@ function renderTask(t, isOverdue=false) {
         </div>
       </div>
     </div>
-    <button class="task-menu-btn" aria-label="More actions" onclick="event.stopPropagation();openTaskMenu(${t.id})">⋯</button>
   </div>`;
 }
 
@@ -1903,33 +1917,27 @@ function confirmDelete() {
 }
 
 // ── Drag to reorder ────────────────────────────────────────────
-let dragId = null;
-// ── Drag to reorder (touch + mouse) ───────────────────────────
-let touchDragEl = null;
-let touchDragId = null;
-let touchStartY = 0;
 let touchGesture = null;
+let mouseGesture = null;
 let ignoreTaskTapUntil = 0;
-
-let longPressTimer = null;
-const LONG_PRESS_MS = 500;
+// ── Drag to reorder (touch + mouse) ───────────────────────────
 const TAP_MOVE_MAX = 10;
 const SWIPE_TRIGGER_X = 14;
 const SWIPE_ACTION_X = 72;
 
-function initDrag() {
+function initTaskInteractions() {
   document.querySelectorAll('.task-item').forEach(item => {
     item.addEventListener('touchstart', onItemTouchStart, { passive: true });
     item.addEventListener('touchend', onItemTouchEndLocal);
     item.addEventListener('touchcancel', onItemTouchCancel);
     item.addEventListener('touchmove', onItemTouchMoveLocal, { passive: false });
+    item.addEventListener('mousedown', onItemMouseDown);
   });
 }
 
 function onItemTouchStart(e) {
   const item = e.target.closest('.task-item');
   if (!item) return;
-  if (e.target.closest('.checkbox') || e.target.closest('.task-menu-btn')) return;
   const touch = e.touches[0];
   touchGesture = {
     item,
@@ -1941,14 +1949,9 @@ function onItemTouchStart(e) {
     swiping: false,
     tapEligible: true
   };
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null;
-    if (touchGesture && !touchGesture.swiping) startTouchDrag(e, item);
-  }, LONG_PRESS_MS);
 }
 
 function onItemTouchMoveLocal(e) {
-  if (touchDragEl) return;
   if (!touchGesture) return;
   const touch = e.touches[0];
   touchGesture.dx = touch.clientX - touchGesture.startX;
@@ -1958,10 +1961,7 @@ function onItemTouchMoveLocal(e) {
   }
   if (!touchGesture.swiping) {
     if (Math.abs(touchGesture.dx) > SWIPE_TRIGGER_X && Math.abs(touchGesture.dx) > Math.abs(touchGesture.dy) + 6) {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       touchGesture.swiping = true;
-    } else if (Math.abs(touchGesture.dx) > TAP_MOVE_MAX || Math.abs(touchGesture.dy) > TAP_MOVE_MAX) {
-      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     }
   }
   if (touchGesture.swiping) {
@@ -1981,10 +1981,9 @@ function onItemTouchEndLocal() {
       askDelete(id);
     }
     touchGesture = null;
-    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     return;
   }
-  if (touchGesture && touchGesture.tapEligible && !touchDragEl) {
+  if (touchGesture && touchGesture.tapEligible) {
     const { id } = touchGesture;
     ignoreTaskTapUntil = Date.now() + 420;
     onItemTouchCancel();
@@ -1995,9 +1994,50 @@ function onItemTouchEndLocal() {
 }
 
 function onItemTouchCancel() {
-  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   if (touchGesture && touchGesture.item) resetTaskSwipe(touchGesture.item);
   touchGesture = null;
+}
+
+function onItemMouseDown(e) {
+  if (e.button !== 0) return;
+  mouseGesture = {
+    item: e.currentTarget,
+    id: parseInt(e.currentTarget.dataset.id, 10),
+    startX: e.clientX,
+    startY: e.clientY,
+    dx: 0,
+    dy: 0,
+    swiping: false
+  };
+  document.addEventListener('mousemove', onItemMouseMove);
+  document.addEventListener('mouseup', onItemMouseUp);
+}
+
+function onItemMouseMove(e) {
+  if (!mouseGesture) return;
+  mouseGesture.dx = e.clientX - mouseGesture.startX;
+  mouseGesture.dy = e.clientY - mouseGesture.startY;
+  if (!mouseGesture.swiping && Math.abs(mouseGesture.dx) > SWIPE_TRIGGER_X && Math.abs(mouseGesture.dx) > Math.abs(mouseGesture.dy) + 6) {
+    mouseGesture.swiping = true;
+  }
+  if (mouseGesture.swiping) {
+    e.preventDefault();
+    applyTaskSwipe(mouseGesture.item, mouseGesture.dx);
+  }
+}
+
+function onItemMouseUp() {
+  document.removeEventListener('mousemove', onItemMouseMove);
+  document.removeEventListener('mouseup', onItemMouseUp);
+  if (!mouseGesture) return;
+  const { item, id, dx, swiping } = mouseGesture;
+  if (swiping) {
+    ignoreTaskTapUntil = Date.now() + 420;
+    resetTaskSwipe(item);
+    if (dx > SWIPE_ACTION_X) quickCompleteSwipe(id);
+    else if (dx < -SWIPE_ACTION_X) askDelete(id);
+  }
+  mouseGesture = null;
 }
 
 function applyTaskSwipe(item, dx) {
@@ -2015,7 +2055,6 @@ function resetTaskSwipe(item) {
 
 function handleTaskTap(event, id) {
   if (Date.now() < ignoreTaskTapUntil) return;
-  if (event.target.closest('.checkbox') || event.target.closest('.task-menu-btn')) return;
   openModal(id);
 }
 
@@ -2042,87 +2081,6 @@ function quickCompleteSwipe(id) {
     checkAllDone();
     maybeAutoArchiveTask(t.id);
   }
-}
-
-function startTouchDrag(e, item) {
-  if (touchGesture) touchGesture.tapEligible = false;
-  touchDragId = parseInt(item.dataset.id);
-  touchDragEl = item;
-  touchStartY = e.touches[0].clientY;
-  item.classList.add('dragging');
-  if (navigator.vibrate) navigator.vibrate(30);
-  document.addEventListener('touchmove', onTouchMove, { passive: false });
-  document.addEventListener('touchend', onTouchEnd);
-}
-
-function onTouchMove(e) {
-  e.preventDefault();
-  if (!touchDragEl) return;
-  const y = e.touches[0].clientY;
-  const items = [...document.querySelectorAll('.task-item:not(.dragging)')];
-  document.querySelectorAll('.task-item.drag-over').forEach(x => x.classList.remove('drag-over'));
-  for (const item of items) {
-    const rect = item.getBoundingClientRect();
-    const mid = rect.top + rect.height / 2;
-    if (y < mid) { item.classList.add('drag-over'); break; }
-  }
-}
-
-function onTouchEnd(e) {
-  document.removeEventListener('touchmove', onTouchMove);
-  document.removeEventListener('touchend', onTouchEnd);
-  if (!touchDragEl) return;
-
-  const overEl = document.querySelector('.task-item.drag-over');
-  if (overEl && overEl.dataset.id) {
-    const targetId = parseInt(overEl.dataset.id);
-    if (targetId !== touchDragId) {
-      const fromIdx = tasks.findIndex(t => t.id === touchDragId);
-      const toIdx = tasks.findIndex(t => t.id === targetId);
-      if (fromIdx >= 0 && toIdx >= 0) {
-        const [moved] = tasks.splice(fromIdx, 1);
-        tasks.splice(toIdx, 0, moved);
-        save();
-      }
-    }
-  }
-
-  document.querySelectorAll('.task-item').forEach(x => x.classList.remove('dragging', 'drag-over'));
-  touchDragEl = null; touchDragId = null;
-  tasks.forEach((t, i) => t.sortOrder = i);
-  save();
-  render();
-  pushIfConnected('touch-reorder');
-}
-
-// Desktop drag (mouse)
-function dragStart(e, id) {
-  dragId = id;
-  e.dataTransfer.effectAllowed = 'move';
-  setTimeout(() => { const el = e.target.closest('.task-item'); if (el) el.classList.add('dragging'); }, 0);
-}
-function dragOver(e) {
-  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
-  const el = e.target.closest('.task-item');
-  document.querySelectorAll('.task-item.drag-over').forEach(x => x.classList.remove('drag-over'));
-  if (el && el.dataset.id != dragId) el.classList.add('drag-over');
-}
-function dragDrop(e, targetId) {
-  e.preventDefault();
-  document.querySelectorAll('.task-item.drag-over').forEach(x => x.classList.remove('drag-over'));
-  if (!dragId || dragId === targetId) return;
-  const fromIdx = tasks.findIndex(t => t.id === dragId);
-  const toIdx = tasks.findIndex(t => t.id === targetId);
-  if (fromIdx < 0 || toIdx < 0) return;
-  const [moved] = tasks.splice(fromIdx, 1);
-  tasks.splice(toIdx, 0, moved);
-  tasks.forEach((t, i) => t.sortOrder = i);
-  save(); render();
-  pushIfConnected('reorder');
-}
-function dragEnd(e) {
-  dragId = null;
-  document.querySelectorAll('.task-item').forEach(x => x.classList.remove('dragging', 'drag-over'));
 }
 
 // ── Status dropdown ────────────────────────────────────────────
@@ -3385,3 +3343,5 @@ document.addEventListener('touchend', async () => {
 
 </body>
 </html>
+
+

@@ -1919,8 +1919,7 @@ function confirmDelete() {
 }
 
 // ── Drag to reorder ────────────────────────────────────────────
-let touchGesture = null;
-let mouseGesture = null;
+let pointerGesture = null;
 let ignoreTaskTapUntil = 0;
 // ── Drag to reorder (touch + mouse) ───────────────────────────
 const TAP_MOVE_MAX = 10;
@@ -1929,52 +1928,52 @@ const SWIPE_ACTION_X = 72;
 
 function initTaskInteractions() {
   document.querySelectorAll('.task-item').forEach(item => {
-    item.addEventListener('touchstart', onItemTouchStart, { passive: true });
-    item.addEventListener('touchend', onItemTouchEndLocal);
-    item.addEventListener('touchcancel', onItemTouchCancel);
-    item.addEventListener('touchmove', onItemTouchMoveLocal, { passive: false });
-    item.addEventListener('mousedown', onItemMouseDown);
+    item.addEventListener('pointerdown', onItemPointerDown);
   });
 }
 
-function onItemTouchStart(e) {
-  const item = e.target.closest('.task-item');
-  if (!item) return;
-  const touch = e.touches[0];
-  touchGesture = {
+function onItemPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const item = e.currentTarget;
+  pointerGesture = {
     item,
     id: parseInt(item.dataset.id, 10),
-    startX: touch.clientX,
-    startY: touch.clientY,
+    pointerId: e.pointerId,
+    pointerType: e.pointerType || 'mouse',
+    startX: e.clientX,
+    startY: e.clientY,
     dx: 0,
     dy: 0,
     swiping: false,
     tapEligible: true
   };
+  document.addEventListener('pointermove', onItemPointerMove, { passive: false });
+  document.addEventListener('pointerup', onItemPointerUp);
+  document.addEventListener('pointercancel', onItemPointerCancel);
 }
 
-function onItemTouchMoveLocal(e) {
-  if (!touchGesture) return;
-  const touch = e.touches[0];
-  touchGesture.dx = touch.clientX - touchGesture.startX;
-  touchGesture.dy = touch.clientY - touchGesture.startY;
-  if (Math.abs(touchGesture.dx) > TAP_MOVE_MAX || Math.abs(touchGesture.dy) > TAP_MOVE_MAX) {
-    touchGesture.tapEligible = false;
+function onItemPointerMove(e) {
+  if (!pointerGesture || e.pointerId !== pointerGesture.pointerId) return;
+  pointerGesture.dx = e.clientX - pointerGesture.startX;
+  pointerGesture.dy = e.clientY - pointerGesture.startY;
+  if (Math.abs(pointerGesture.dx) > TAP_MOVE_MAX || Math.abs(pointerGesture.dy) > TAP_MOVE_MAX) {
+    pointerGesture.tapEligible = false;
   }
-  if (!touchGesture.swiping) {
-    if (Math.abs(touchGesture.dx) > SWIPE_TRIGGER_X && Math.abs(touchGesture.dx) > Math.abs(touchGesture.dy) + 6) {
-      touchGesture.swiping = true;
+  if (!pointerGesture.swiping) {
+    if (Math.abs(pointerGesture.dx) > SWIPE_TRIGGER_X && Math.abs(pointerGesture.dx) > Math.abs(pointerGesture.dy) + 6) {
+      pointerGesture.swiping = true;
     }
   }
-  if (touchGesture.swiping) {
+  if (pointerGesture.swiping) {
     e.preventDefault();
-    applyTaskSwipe(touchGesture.item, touchGesture.dx);
+    applyTaskSwipe(pointerGesture.item, pointerGesture.dx);
   }
 }
 
-function onItemTouchEndLocal() {
-  if (touchGesture && touchGesture.swiping) {
-    const { item, id, dx } = touchGesture;
+function onItemPointerUp(e) {
+  if (!pointerGesture || e.pointerId !== pointerGesture.pointerId) return;
+  if (pointerGesture.swiping) {
+    const { item, id, dx } = pointerGesture;
     ignoreTaskTapUntil = Date.now() + 420;
     resetTaskSwipe(item);
     if (dx > SWIPE_ACTION_X) {
@@ -1982,64 +1981,30 @@ function onItemTouchEndLocal() {
     } else if (dx < -SWIPE_ACTION_X) {
       askDelete(id);
     }
-    touchGesture = null;
+    cleanupPointerGesture();
     return;
   }
-  if (touchGesture && touchGesture.tapEligible) {
-    const { id } = touchGesture;
+  if (pointerGesture.tapEligible && pointerGesture.pointerType !== 'mouse') {
+    const { id } = pointerGesture;
     ignoreTaskTapUntil = Date.now() + 420;
-    onItemTouchCancel();
+    cleanupPointerGesture();
     openModal(id);
     return;
   }
-  onItemTouchCancel();
+  cleanupPointerGesture();
 }
 
-function onItemTouchCancel() {
-  if (touchGesture && touchGesture.item) resetTaskSwipe(touchGesture.item);
-  touchGesture = null;
+function onItemPointerCancel(e) {
+  if (!pointerGesture || (e && e.pointerId !== pointerGesture.pointerId)) return;
+  cleanupPointerGesture();
 }
 
-function onItemMouseDown(e) {
-  if (e.button !== 0) return;
-  mouseGesture = {
-    item: e.currentTarget,
-    id: parseInt(e.currentTarget.dataset.id, 10),
-    startX: e.clientX,
-    startY: e.clientY,
-    dx: 0,
-    dy: 0,
-    swiping: false
-  };
-  document.addEventListener('mousemove', onItemMouseMove);
-  document.addEventListener('mouseup', onItemMouseUp);
-}
-
-function onItemMouseMove(e) {
-  if (!mouseGesture) return;
-  mouseGesture.dx = e.clientX - mouseGesture.startX;
-  mouseGesture.dy = e.clientY - mouseGesture.startY;
-  if (!mouseGesture.swiping && Math.abs(mouseGesture.dx) > SWIPE_TRIGGER_X && Math.abs(mouseGesture.dx) > Math.abs(mouseGesture.dy) + 6) {
-    mouseGesture.swiping = true;
-  }
-  if (mouseGesture.swiping) {
-    e.preventDefault();
-    applyTaskSwipe(mouseGesture.item, mouseGesture.dx);
-  }
-}
-
-function onItemMouseUp() {
-  document.removeEventListener('mousemove', onItemMouseMove);
-  document.removeEventListener('mouseup', onItemMouseUp);
-  if (!mouseGesture) return;
-  const { item, id, dx, swiping } = mouseGesture;
-  if (swiping) {
-    ignoreTaskTapUntil = Date.now() + 420;
-    resetTaskSwipe(item);
-    if (dx > SWIPE_ACTION_X) quickCompleteSwipe(id);
-    else if (dx < -SWIPE_ACTION_X) askDelete(id);
-  }
-  mouseGesture = null;
+function cleanupPointerGesture() {
+  document.removeEventListener('pointermove', onItemPointerMove);
+  document.removeEventListener('pointerup', onItemPointerUp);
+  document.removeEventListener('pointercancel', onItemPointerCancel);
+  if (pointerGesture?.item) resetTaskSwipe(pointerGesture.item);
+  pointerGesture = null;
 }
 
 function applyTaskSwipe(item, dx) {

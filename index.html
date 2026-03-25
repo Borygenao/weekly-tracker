@@ -725,13 +725,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; }
   </div>
 </div>
 
-<div class="build-version" id="buildVersion">v0.5.3</div>
+<div class="build-version" id="buildVersion">v0.5.4</div>
 <div class="debug-probe" id="debugProbe">ready</div>
 <div class="runtime-error" id="runtimeError"></div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────
-const BUILD_VERSION = '0.5.3';
+const BUILD_VERSION = '0.5.4';
 let supabase = null;
 let supabaseUser = null;
 let supabaseProfile = null;
@@ -753,6 +753,34 @@ const syncChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('wtt-s
 
 const taskInput = document.getElementById('taskInput');
 taskInput.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); });
+
+function bindCoreControls() {
+  document.getElementById('settingsBtn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSettings();
+  });
+  document.querySelector('.add-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    addTask();
+  });
+  document.querySelector('.archive-btn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleArchive();
+  });
+  document.getElementById('clearBtn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    clearDone();
+  });
+  document.getElementById('calBtn')?.addEventListener('click', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleCalendar();
+  });
+}
 
 // ── Date utils ─────────────────────────────────────────────────
 function toDateKey(date) {
@@ -3182,6 +3210,7 @@ function checkAllDone() {
 
 // ── Init ───────────────────────────────────────────────────────
 render();
+bindCoreControls();
 window.addEventListener('load', async () => {
   const buildEl = document.getElementById('buildVersion');
   if (buildEl) buildEl.textContent = `v${BUILD_VERSION}`;

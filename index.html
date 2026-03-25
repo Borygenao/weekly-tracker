@@ -907,7 +907,8 @@ async function archiveSingleTask(id, fromAuto=false) {
   tasks = tasks.filter(x => x.id !== id);
   save();
   render();
-  if (sheetId && isTokenValid()) {
+  const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
+  if (canSyncArchive) {
     await runFullSync('archive-single', { archiveList: [archivedTask] }).catch(() => archiveTasks([archivedTask]).catch(() => {}));
   } else {
     archiveTasks([archivedTask]).catch(() => {});
@@ -1570,7 +1571,8 @@ async function clearDone() {
   tasks = tasks.filter(t => !toArchive.find(a => a.id === t.id));
   save();
   render();
-  if (sheetId && isTokenValid()) {
+  const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
+  if (canSyncArchive) {
     await runFullSync('archive-completed', { archiveList: toArchive });
   } else {
     archiveTasks(toArchive).catch(() => {});
@@ -2837,7 +2839,8 @@ async function archiveTasks(taskList) {
 
 async function loadArchive() {
   const fallback = getLocalArchiveCache();
-  if (!sheetId || !isTokenValid()) return fallback;
+  const valid = sheetId && (isTokenValid() || await getValidToken());
+  if (!valid) return fallback;
   const ok = await ensureArchiveTab();
   if (!ok) return fallback;
   const data = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
@@ -2892,7 +2895,8 @@ async function restoreArchivedTask(archiveKey) {
   save();
   render();
   renderArchive(archiveData);
-  if (sheetId && isTokenValid()) {
+  const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
+  if (canSyncArchive) {
     try { await rewriteArchiveSheet(remaining); } catch (_) {}
   }
   pushIfConnected('restore-archive');
@@ -2908,7 +2912,8 @@ async function deleteArchivedTask(archiveKey) {
   archiveData = archiveData.filter(t => (t._archiveKey || String(t.id)) !== String(archiveKey));
   render();
   renderArchive(archiveData);
-  if (sheetId && isTokenValid()) {
+  const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
+  if (canSyncArchive) {
     try { await rewriteArchiveSheet(remaining); } catch (_) {}
   }
   showSyncIndicator('✓ Removed from archive');
@@ -2943,7 +2948,8 @@ async function editArchivedTaskDate(archiveKey) {
   }).sort((a,b) => (b.archivedAt || 0) - (a.archivedAt || 0));
   render();
   renderArchive(archiveData);
-  if (sheetId && isTokenValid()) {
+  const canSyncArchive = sheetId && (isTokenValid() || await getValidToken());
+  if (canSyncArchive) {
     try { await rewriteArchiveSheet(updated); } catch (_) {}
   }
   showSyncIndicator('✓ Archive date updated');

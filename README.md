@@ -4,7 +4,7 @@ Mobile-first weekly task tracker with:
 
 - work and personal task lanes
 - AI-generated daily and weekly reports
-- Supabase Auth + realtime sync for tasks and archive
+- Google Sheets sync for cross-device use
 - installable PWA support
 
 ## Repos
@@ -16,8 +16,8 @@ Mobile-first weekly task tracker with:
 
 - The frontend is a static app hosted from `index.html`.
 - AI features call the proxy at `/api/claude`.
-- Cloud sync uses Supabase Auth with Google sign-in.
-- Task and archive data live in the `tasks` table in Supabase.
+- Google Sheets sync uses Google's browser OAuth flow directly in the app.
+- The proxy's Google token-store routes are disabled by default and are not required for normal Sheets sync.
 
 ## Main Features
 
@@ -27,8 +27,7 @@ Mobile-first weekly task tracker with:
 - AI priority detection
 - daily and weekly work reports
 - monthly calendar view
-- archive view backed by local cache and Supabase
-- realtime sync across devices
+- archive view backed by local cache and Google Sheets
 
 ## Setup
 
@@ -45,50 +44,42 @@ Recommended environment variables:
 - `ALLOWED_ORIGINS`: comma-separated origins allowed to call the proxy
   Example: `https://borygenao.github.io,http://localhost:3000`
 
-### 2. Configure Supabase
+Optional environment variables for the disabled-by-default Google token store:
 
-1. Open your Supabase project.
-2. Go to `Authentication` -> `Providers`.
-3. Enable `Google`.
-4. Add your site URL and redirect URL for the app.
-5. Open the SQL editor and run [`supabase_setup.sql`](/C:/Users/admin/OneDrive/Documents/New%20project/weekly-tracker/supabase_setup.sql).
+- `ENABLE_GOOGLE_TOKEN_STORE=true`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `TOKEN_STORE_FILE`
 
-What that SQL creates:
+Notes:
 
-- `profiles` table with an `is_admin` flag
-- `tasks` table for active and archived items
-- row-level security policies
-- automatic profile creation for new auth users
-- admin access for `rbyogena@gmail.com`
-- realtime publication for `tasks`
+- `/api/auth/*` routes stay off unless `ENABLE_GOOGLE_TOKEN_STORE=true`.
+- If you enable that token store on Render and need persistence across restarts, point `TOKEN_STORE_FILE` at persistent disk storage.
 
-### 3. Configure the app
-
-The Supabase project URL and publishable key are currently embedded in [`index.html`](/C:/Users/admin/OneDrive/Documents/New%20project/weekly-tracker/index.html).
+### 2. Configure the app
 
 1. Open the app.
 2. Open `Settings`.
 3. Paste the deployed proxy URL into `AI / API Connection`.
 4. Save it.
-5. Sign in through `Cloud Sync`.
 
-### 4. Rotate the service role key
+### 3. Configure Google Sheets sync
 
-The service role key was used for setup planning only and should not be kept as shared plaintext.
+The app uses the Google browser OAuth client configured in `index.html`.
 
-After your database is working:
+To use your own Google project:
 
-1. Go to Supabase `Settings` -> `API Keys`.
-2. Rotate the service role key.
-3. Keep it server-side only if you need it later.
+1. Create an OAuth client in Google Cloud.
+2. Replace `GOOGLE_CLIENT_ID` in `index.html`.
+3. Add your deployed app origin to the OAuth allowed origins.
+4. Sign in from each device that should sync.
 
 ## Sync Behavior
 
 - Each device keeps a local cache in `localStorage`.
-- Supabase is the shared source of truth across devices.
-- Realtime subscriptions refresh tasks when another device changes them.
-- Archive data is stored in the same table using `archived_at`.
-- Deletes are tracked with tombstones to avoid old device data coming back.
+- Sync merges local and remote tasks using `updatedAt`.
+- Writes no longer clear the sheet first; the app writes merged rows, then trims stale tail rows only after a successful write.
+- Archive data is also cached locally and mirrored to a separate `Archive` tab in the same spreadsheet.
 
 ## Deployment Notes
 

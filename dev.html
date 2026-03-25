@@ -385,7 +385,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .modal { background:linear-gradient(180deg, rgba(20,24,37,.76), rgba(13,17,27,.74)); border:1px solid rgba(255,255,255,.08); border-radius:24px 24px 0 0; width:100%; max-width:540px; padding:20px 18px 32px; transform:translateY(100%); transition:transform .3s cubic-bezier(.34,1.1,.64,1); display:flex; flex-direction:column; gap:16px; max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; backdrop-filter:blur(22px) saturate(1.18); -webkit-backdrop-filter:blur(22px) saturate(1.18); box-shadow:0 -18px 48px rgba(0,0,0,.45); }
 .modal-overlay.open .modal { transform:translateY(0); }
 .modal-drag { width:40px; height:4px; background:var(--border); border-radius:99px; margin:0 auto 4px; }
-.modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; touch-action:none; }
 .modal-title { font-size:16px; font-weight:700; line-height:1.3; }
 .modal-subtitle { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px; }
 .modal-close { background:none; border:none; color:var(--muted); font-size:24px; cursor:pointer; min-width:var(--touch); min-height:var(--touch); display:flex; align-items:center; justify-content:center; border-radius:8px; flex-shrink:0; }
@@ -454,9 +454,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .tag-option-hash { color:var(--accent); font-weight:700; }
 .tag-option-count { margin-left:auto; color:var(--muted); font-size:9px; }
 
-.modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-bottom:4px; }
-.modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
-.modal-icon-actions { display:flex; gap:8px; margin-left:auto; }
+.modal-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-bottom:4px; }
+.modal-actions { display:flex; gap:8px; flex-wrap:wrap; min-height:40px; }
+.modal-icon-actions { display:flex; gap:8px; }
 .modal-icon-btn { width:40px; height:40px; background:rgba(255,255,255,.02); border:1px solid rgba(124,156,255,.12); color:var(--muted); border-radius:12px; cursor:pointer; transition:all .2s ease; display:flex; align-items:center; justify-content:center; padding:0; }
 .modal-icon-btn svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .modal-icon-btn:hover { border-color:rgba(124,156,255,.42); color:#dbe4ff; background:rgba(124,156,255,.08); }
@@ -469,10 +469,10 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .btn-modal-action.accent:hover { border-color:var(--accent); color:var(--accent); background:rgba(193,244,104,.05); }
 .btn-modal-action.danger:hover { border-color:#ff8a8a; color:#ffd0d0; background:rgba(255,107,107,.05); }
 .btn-modal-action:disabled { opacity:.45; cursor:not-allowed; }
-.btn-save { background:var(--accent); color:#0d0d0d; border:none; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:14px 24px; border-radius:10px; cursor:pointer; min-height:var(--touch); transition:background .2s; }
-.btn-save:active { background:var(--accent-dim); }
-.btn-cancel { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:14px 18px; border-radius:10px; cursor:pointer; min-height:var(--touch); }
-.btn-cancel:active { border-color:var(--text); color:var(--text); }
+.modal-save-btn { width:46px; height:46px; border:none; border-radius:14px; background:linear-gradient(135deg, var(--accent), #d8ff66); color:#0d0d0d; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 14px 28px rgba(200,241,53,.18); transition:transform .2s, box-shadow .2s; flex:0 0 auto; }
+.modal-save-btn svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.modal-save-btn:hover { transform:translateY(-1px); box-shadow:0 18px 34px rgba(200,241,53,.22); }
+.modal-save-btn:active { transform:scale(.96); }
 
 /* ── Calendar Modal ── */
 .cal-modal { background:linear-gradient(180deg, rgba(19,24,36,.94), rgba(15,18,27,.92)); border:1px solid rgba(124,156,255,.14); border-radius:18px; width:100%; max-width:360px; padding:20px; display:flex; flex-direction:column; gap:14px; transform:scale(.95); transition:transform .25s ease; box-shadow:var(--shadow-lg); }
@@ -527,11 +527,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .archive-body { overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch; }
 .archive-group { margin-bottom:18px; }
 .archive-date-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.archive-date-line { flex:1; height:1px; background:rgba(124,156,255,.12); }
 .archive-count { background:var(--border); color:var(--muted); font-size:9px; padding:1px 5px; border-radius:99px; }
-.archive-item { padding:10px 0; border-bottom:1px solid var(--border); }
+.archive-item { padding:9px 0; border-bottom:1px solid rgba(124,156,255,.08); }
 .archive-item:last-child { border-bottom:none; }
-.archive-item-row { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
-.archive-item-text { font-size:14px; color:#d7dced; text-decoration:none; margin-bottom:4px; flex:1; }
+.archive-item-row { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+.archive-item-text { font-size:14px; color:#d7dced; text-decoration:none; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
 .archive-item-actions { display:flex; gap:8px; flex-shrink:0; }
 .archive-action-btn { width:34px; height:34px; background:none; border:1px solid var(--border); color:var(--muted); border-radius:10px; cursor:pointer; transition:all .2s ease; display:flex; align-items:center; justify-content:center; padding:0; }
 .archive-action-btn svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
@@ -869,11 +870,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Auto-fill</button>
     </div>
 
-    <div class="modal-actions" id="modalActions"></div>
-
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveModal()">Save</button>
+      <div class="modal-actions" id="modalActions"></div>
+      <button class="modal-save-btn" onclick="saveModal()" title="Save">
+        <svg viewBox="0 0 24 24">
+          <path d="M5 12.5l4.2 4.2L19 7"></path>
+        </svg>
+      </button>
     </div>
   </div>
 </div>

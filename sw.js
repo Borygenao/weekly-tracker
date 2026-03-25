@@ -1,8 +1,9 @@
-const CACHE = 'weekly-v55';
+const CACHE = 'weekly-v56';
 const ASSETS = [
   '/weekly-tracker/',
   '/weekly-tracker/index.html',
   '/weekly-tracker/dev.html',
+  '/weekly-tracker/dev-app.js',
   '/weekly-tracker/icon-192.png',
   '/weekly-tracker/icon-512.png',
   '/weekly-tracker/apple-touch-icon.png',
@@ -28,9 +29,13 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   if (url.pathname.includes('/api/')) return;
 
-  const isShell = url.pathname === '/weekly-tracker/' || url.pathname.endsWith('/index.html');
+  const isShell =
+    url.pathname === '/weekly-tracker/' ||
+    url.pathname.endsWith('/index.html') ||
+    url.pathname.endsWith('/dev.html');
+  const isDevRuntime = url.pathname.endsWith('/dev-app.js');
 
-  if (isShell) {
+  if (isShell || isDevRuntime) {
     e.respondWith(
       fetch(req, { cache: 'no-store' }).then(res => {
         if (res && res.status === 200) {
@@ -38,7 +43,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(req, copy));
         }
         return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match('/weekly-tracker/index.html')))
+      }).catch(() => caches.match(req).then(r => r || caches.match(url.pathname.endsWith('/dev.html') ? '/weekly-tracker/dev.html' : isDevRuntime ? '/weekly-tracker/dev-app.js' : '/weekly-tracker/index.html')))
     );
     return;
   }

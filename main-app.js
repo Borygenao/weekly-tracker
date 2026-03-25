@@ -1,7 +1,7 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.8.1';
+const BUILD='v0.8.2';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';

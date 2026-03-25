@@ -66,7 +66,7 @@ body { background:
   radial-gradient(circle at top left, rgba(124,156,255,.16), transparent 30%),
   radial-gradient(circle at top right, rgba(240,122,255,.10), transparent 24%),
   linear-gradient(180deg, #0b0f18 0%, #090b12 100%);
-  color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; padding:24px 16px 120px; position:relative; overflow-x:hidden; }
+  color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; padding:calc(24px + env(safe-area-inset-top)) 16px calc(120px + env(safe-area-inset-bottom)); position:relative; overflow-x:hidden; }
 [data-theme="light"] body { background:
   radial-gradient(circle at top left, rgba(255,255,255,.92), transparent 36%),
   radial-gradient(circle at top right, rgba(245,247,252,.9), transparent 28%),
@@ -553,7 +553,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 @media (max-width: 640px) {
-  body { padding:16px 12px 110px; }
+body { padding:calc(18px + env(safe-area-inset-top)) 12px calc(110px + env(safe-area-inset-bottom)); }
   header { margin-bottom:18px; }
   h1 { font-size:34px; }
   .header-left .label { letter-spacing:2.4px; }
@@ -879,7 +879,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   </div>
 </div>
 
-<div class="build-version">v0.8.7-dev</div>
+<div class="build-version">v0.8.8-dev</div>
 <script src="./dev-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

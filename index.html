@@ -66,7 +66,7 @@ body { background:
   radial-gradient(circle at top left, rgba(124,156,255,.16), transparent 30%),
   radial-gradient(circle at top right, rgba(240,122,255,.10), transparent 24%),
   linear-gradient(180deg, #0b0f18 0%, #090b12 100%);
-  color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; padding:24px 16px 120px; position:relative; overflow-x:hidden; }
+  color:var(--text); font-family:'Syne',sans-serif; min-height:100vh; padding:calc(24px + env(safe-area-inset-top)) 16px calc(120px + env(safe-area-inset-bottom)); position:relative; overflow-x:hidden; }
 [data-theme="light"] body { background:
   radial-gradient(circle at top left, rgba(255,255,255,.92), transparent 36%),
   radial-gradient(circle at top right, rgba(245,247,252,.9), transparent 28%),
@@ -274,8 +274,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .btn-signout:hover { border-color:#ff5c5c; color:#ff5c5c; }
 .whats-new-overlay { position:fixed; inset:0; background:rgba(6,8,14,.66); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); display:none; align-items:center; justify-content:center; padding:20px 14px; z-index:620; }
 .whats-new-overlay.open { display:flex; }
-.whats-new-panel { width:min(100%, 520px); max-height:min(78vh, 700px); overflow:auto; background:linear-gradient(180deg, rgba(14,18,31,.96), rgba(10,13,23,.94)); border:1px solid rgba(124,156,255,.18); border-radius:20px; box-shadow:0 24px 64px rgba(0,0,0,.46); padding:18px 18px 20px; position:relative; }
-.whats-new-close { position:absolute; top:12px; right:12px; width:38px; height:38px; border-radius:12px; border:1px solid rgba(124,156,255,.16); background:rgba(255,255,255,.02); color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
+.whats-new-panel { width:min(100%, 520px); max-height:min(78vh, 700px); overflow:auto; background:linear-gradient(180deg, rgba(14,18,31,.96), rgba(10,13,23,.94)); border:1px solid rgba(124,156,255,.18); border-radius:20px; box-shadow:0 24px 64px rgba(0,0,0,.46); padding:22px 18px 20px; position:relative; }
+.whats-new-close { position:absolute; top:14px; right:14px; width:38px; height:38px; border-radius:12px; border:1px solid rgba(124,156,255,.16); background:rgba(255,255,255,.02); color:var(--muted); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
 .whats-new-close:hover { border-color:var(--accent); color:var(--accent); }
 .whats-new-kicker { font-family:'Space Mono',monospace; font-size:10px; color:var(--accent); letter-spacing:2px; text-transform:uppercase; margin-bottom:10px; }
 .whats-new-title { font-size:28px; line-height:1.05; letter-spacing:-1px; margin-bottom:10px; padding-right:44px; }
@@ -572,7 +572,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 @media (max-width: 640px) {
-  body { padding:16px 12px 110px; }
+body { padding:calc(18px + env(safe-area-inset-top)) 12px calc(110px + env(safe-area-inset-bottom)); }
   header { margin-bottom:18px; }
   h1 { font-size:34px; }
   .header-left .label { letter-spacing:2.4px; }
@@ -932,7 +932,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   </div>
 </div>
 
-<div class="build-version">v0.8.6</div>
+<div class="build-version">v0.8.7</div>
 <script src="./main-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

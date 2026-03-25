@@ -1913,6 +1913,9 @@ let ignoreTaskTapUntil = 0;
 
 let longPressTimer = null;
 const LONG_PRESS_MS = 500;
+const TAP_MOVE_MAX = 10;
+const SWIPE_TRIGGER_X = 14;
+const SWIPE_ACTION_X = 72;
 
 function initDrag() {
   document.querySelectorAll('.task-item').forEach(item => {
@@ -1928,7 +1931,16 @@ function onItemTouchStart(e) {
   if (!item) return;
   if (e.target.closest('.checkbox') || e.target.closest('.task-menu-btn')) return;
   const touch = e.touches[0];
-  touchGesture = { item, id: parseInt(item.dataset.id, 10), startX: touch.clientX, startY: touch.clientY, dx: 0, dy: 0, swiping: false };
+  touchGesture = {
+    item,
+    id: parseInt(item.dataset.id, 10),
+    startX: touch.clientX,
+    startY: touch.clientY,
+    dx: 0,
+    dy: 0,
+    swiping: false,
+    tapEligible: true
+  };
   longPressTimer = setTimeout(() => {
     longPressTimer = null;
     if (touchGesture && !touchGesture.swiping) startTouchDrag(e, item);
@@ -1941,13 +1953,15 @@ function onItemTouchMoveLocal(e) {
   const touch = e.touches[0];
   touchGesture.dx = touch.clientX - touchGesture.startX;
   touchGesture.dy = touch.clientY - touchGesture.startY;
+  if (Math.abs(touchGesture.dx) > TAP_MOVE_MAX || Math.abs(touchGesture.dy) > TAP_MOVE_MAX) {
+    touchGesture.tapEligible = false;
+  }
   if (!touchGesture.swiping) {
-    if (Math.abs(touchGesture.dx) > 14 && Math.abs(touchGesture.dx) > Math.abs(touchGesture.dy) + 6) {
+    if (Math.abs(touchGesture.dx) > SWIPE_TRIGGER_X && Math.abs(touchGesture.dx) > Math.abs(touchGesture.dy) + 6) {
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
       touchGesture.swiping = true;
-    } else if (Math.abs(touchGesture.dx) > 8 || Math.abs(touchGesture.dy) > 8) {
-      onItemTouchCancel();
-      return;
+    } else if (Math.abs(touchGesture.dx) > TAP_MOVE_MAX || Math.abs(touchGesture.dy) > TAP_MOVE_MAX) {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     }
   }
   if (touchGesture.swiping) {
@@ -1961,12 +1975,20 @@ function onItemTouchEndLocal() {
     const { item, id, dx } = touchGesture;
     ignoreTaskTapUntil = Date.now() + 420;
     resetTaskSwipe(item);
-    if (dx > 72) {
+    if (dx > SWIPE_ACTION_X) {
       quickCompleteSwipe(id);
-    } else if (dx < -72) {
+    } else if (dx < -SWIPE_ACTION_X) {
       askDelete(id);
     }
     touchGesture = null;
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    return;
+  }
+  if (touchGesture && touchGesture.tapEligible && !touchDragEl) {
+    const { id } = touchGesture;
+    ignoreTaskTapUntil = Date.now() + 420;
+    onItemTouchCancel();
+    openModal(id);
     return;
   }
   onItemTouchCancel();
@@ -2023,6 +2045,7 @@ function quickCompleteSwipe(id) {
 }
 
 function startTouchDrag(e, item) {
+  if (touchGesture) touchGesture.tapEligible = false;
   touchDragId = parseInt(item.dataset.id);
   touchDragEl = item;
   touchStartY = e.touches[0].clientY;

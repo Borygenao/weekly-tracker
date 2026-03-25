@@ -356,8 +356,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .tag-prefix { font-family:'Space Mono',monospace; font-size:13px; color:var(--accent); font-weight:700; }
 .tag-input { flex:1; background:none; border:none; color:var(--text); font-family:'Space Mono',monospace; font-size:12px; outline:none; }
 .tag-input::placeholder { color:var(--muted); }
-.tag-dropdown { position:absolute; top:100%; left:0; right:0; background:#1a1a1a; border:1px solid var(--border); border-radius:8px; overflow:hidden; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); margin-top:3px; }
-.tag-option { padding:10px 14px; font-family:'Space Mono',monospace; font-size:11px; color:var(--text); cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .1s; }
+.tag-dropdown { position:absolute; top:100%; left:0; right:0; background:rgba(16,20,31,.98); border:1px solid rgba(124,156,255,.16); border-radius:10px; overflow:hidden; z-index:200; box-shadow:0 16px 32px rgba(0,0,0,.45); margin-top:6px; backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+.tag-option { width:100%; padding:10px 14px; font-family:'Space Mono',monospace; font-size:11px; color:var(--text); cursor:pointer; display:flex; align-items:center; gap:8px; transition:background .1s; background:transparent; border:none; text-align:left; }
 .tag-option:hover, .tag-option.highlighted { background:rgba(200,241,53,.08); }
 .tag-option-hash { color:var(--accent); font-weight:700; }
 .tag-option-count { margin-left:auto; color:var(--muted); font-size:9px; }
@@ -435,11 +435,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .archive-body { overflow-y:auto; flex:1; -webkit-overflow-scrolling:touch; }
 .archive-group { margin-bottom:18px; }
 .archive-date-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.archive-date-line { flex:1; height:1px; background:rgba(124,156,255,.12); }
 .archive-count { background:var(--border); color:var(--muted); font-size:9px; padding:1px 5px; border-radius:99px; }
-.archive-item { padding:10px 0; border-bottom:1px solid var(--border); }
+.archive-item { padding:9px 0; border-bottom:1px solid rgba(124,156,255,.08); }
 .archive-item:last-child { border-bottom:none; }
-.archive-item-row { display:flex; align-items:flex-start; gap:10px; justify-content:space-between; }
-.archive-item-text { font-size:14px; color:#d7dced; text-decoration:none; margin-bottom:4px; flex:1; }
+.archive-item-row { display:flex; align-items:center; gap:10px; justify-content:space-between; }
+.archive-item-text { font-size:14px; color:#d7dced; text-decoration:none; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
 .archive-item-actions { display:flex; gap:8px; flex-shrink:0; }
 .archive-action-btn { width:34px; height:34px; background:none; border:1px solid var(--border); color:var(--muted); border-radius:10px; cursor:pointer; transition:all .2s ease; display:flex; align-items:center; justify-content:center; padding:0; }
 .archive-action-btn svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
@@ -793,7 +794,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   </div>
 </div>
 
-<div class="build-version">v0.8.2</div>
+<div class="build-version">v0.8.3</div>
 <script src="./main-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

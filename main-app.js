@@ -1,14 +1,14 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.8.0';
+const BUILD='v0.8.1';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';
 let tasks=[],archiveData=[],filter='all',sortMode='default',category='all',newTaskCat='work';
 let activeTaskId=null,pendingScheduleDate='',pendingPriority='medium',pendingDeleteId=null,tagHighlightIndex=-1;
 let settingsOpen=false,archiveOpen=false,calOpen=false,reportOpen=false,reportType='daily',reportText='',ptrStartY=0,ptrActive=false,syncTimer=null;
-let client=null,user=null,channel=null,lastCloudError='',gesture=null,ignoreTaskTapUntil=0,calAnchor=new Date();
+let client=null,user=null,channel=null,lastCloudError='',gesture=null,ignoreTaskTapUntil=0,calAnchor=new Date(),modalGesture=null;
 let aiReportEnabled=localStorage.getItem('wtt_ai_report')!=='off';
 const $=id=>document.getElementById(id);
 const now=()=>Date.now();
@@ -93,7 +93,8 @@ function setFilterFromSelect(v){filter=v||'all';render()}
 function setSortFromSelect(v){sortMode=v||'default';render()}
 function taskById(taskId){return tasks.find(t=>t.id===taskId)||archiveData.find(t=>t.id===taskId)||null}
 function openModal(taskId){const isNew=taskId==='__new__';const t=isNew?{id:'__new__',text:$('taskInput')?.value.trim()||'',category:newTaskCat,priority:'medium',scheduledDate:'',notes:'',tag:'',createdAt:now(),updatedAt:null,blocked:false}:taskById(taskId);if(!t)return;activeTaskId=t.id;pendingScheduleDate=t.scheduledDate||'';pendingPriority=t.priority||'medium';$('modalTitleInput').value=t.text||'';$('tagInput').value=t.tag||'';$('notesArea').value=t.notes||'';$('modalSubtitle').textContent=isNew?`${t.category==='personal'?'Personal':'Work'} task · choose a date to create`:t.category==='personal'?'Personal task':'Work task';$('modalTimestamps').textContent=isNew?'Pick a scheduled date to create this task.':[t.createdAt?`Created ${fmtTime(t.createdAt)}`:'',t.updatedAt?`Updated ${fmtTime(t.updatedAt)}`:'',t.completedAt?`Done ${fmtTime(t.completedAt)}`:'',t.scheduledDate?`Scheduled ${fmtDate(t.scheduledDate)}`:''].filter(Boolean).join(' · ');document.querySelectorAll('.priority-pill').forEach(p=>p.classList.toggle('active',p.dataset.p===pendingPriority));buildDayPicker();renderModalActions(t);$('modalOverlay')?.classList.add('open')}
-function closeModal(){activeTaskId=null;$('modalOverlay')?.classList.remove('open');closeTagDropdown()}
+function resetModalSheetPosition(){const sheet=$('modalSheet');if(sheet)sheet.style.transform=''}
+function closeModal(){activeTaskId=null;$('modalOverlay')?.classList.remove('open');resetModalSheetPosition();closeTagDropdown()}
 function renderModalActions(t){const el=$('modalActions');if(!el)return;if(t.id==='__new__'){el.innerHTML='';return}const archiveIcon='<svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M6 7l1 13h10l1-13"></path><path d="M9 7V4h6v3"></path></svg>';const blockIcon=t.blocked?'<svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2-5"></path><path d="M5 7v5h5"></path></svg>':'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M8.5 8.5l7 7"></path></svg>';const deleteIcon='<svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M10 11v6M14 11v6"></path><path d="M6 7l1 13h10l1-13"></path><path d="M9 7V4h6v3"></path></svg>';el.innerHTML=`<div class="modal-icon-actions"><button class="modal-icon-btn" type="button" id="modalArchiveBtn" title="Archive">${archiveIcon}</button><button class="modal-icon-btn ${t.blocked?'blocked':''}" type="button" id="modalBlockBtn" title="${t.blocked?'Unblock':'Block'}">${blockIcon}</button><button class="modal-icon-btn delete" type="button" id="modalDeleteBtn" title="Delete">${deleteIcon}</button></div>`;$('modalArchiveBtn')?.addEventListener('click',()=>modalArchiveTask(t.id));$('modalBlockBtn')?.addEventListener('click',()=>modalToggleBlocked(t.id));$('modalDeleteBtn')?.addEventListener('click',()=>modalDeleteTask(t.id))}
 function selectPriority(p){pendingPriority=p;document.querySelectorAll('.priority-pill').forEach(x=>x.classList.toggle('active',x.dataset.p===p))}
 function buildDayPicker(){const grid=$('dayPickerGrid');if(!grid)return;const opts=[];for(let i=0;i<10;i+=1){const d=new Date();d.setDate(d.getDate()+i);opts.push({key:key(d),day:d.toLocaleDateString(undefined,{weekday:'short'}),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),today:i===0})}grid.innerHTML=opts.map(o=>`<button class="day-pill ${o.key===pendingScheduleDate?'active':''} ${o.today?'today-pill':''}" type="button" data-day-key="${esc(o.key)}"><span class="pill-day">${esc(o.day)}</span><span class="pill-date">${esc(o.date)}</span></button>`).join('');grid.querySelectorAll('[data-day-key]').forEach(b=>b.addEventListener('click',()=>selectDay(b.dataset.dayKey||'')))}
@@ -129,6 +130,10 @@ function renderCalendar(){const grid=$('calGrid'),title=$('calTitle');if(!grid||
 function handleCalOverlayClick(e){if(e.target?.id==='calOverlay')toggleCalendar(false)}
 function handleArchiveOverlayClick(e){if(e.target?.id==='archiveOverlay')toggleArchive(false)}
 function handleOverlayClick(e){if(e.target?.id==='modalOverlay')closeModal()}
+function startModalGesture(e){if(!e.target.closest('.modal-drag,.modal-header'))return;modalGesture={startY:e.clientY,startX:e.clientX,lastY:e.clientY,active:true};$('modalSheet')?.setPointerCapture?.(e.pointerId)}
+function moveModalGesture(e){if(!modalGesture?.active)return;const dy=Math.max(0,e.clientY-modalGesture.startY);const dx=Math.abs(e.clientX-modalGesture.startX);if(dx>dy)return;const sheet=$('modalSheet');if(sheet){sheet.style.transform=`translateY(${Math.min(140,dy)}px)`}}
+function endModalGesture(e){if(!modalGesture?.active)return;const dy=Math.max(0,e.clientY-modalGesture.startY);modalGesture=null;if(dy>90){closeModal();return}resetModalSheetPosition()}
+function cancelModalGesture(){if(!modalGesture?.active)return;modalGesture=null;resetModalSheetPosition()}
 function clearGesture(){if(!gesture)return;gesture.item.style.transform='';gesture.item.classList.remove('swipe-right','swipe-left');gesture=null}
 function swipe(taskId,dx){if(dx>=72){ignoreTaskTapUntil=now()+250;toggleTask(taskId);return true}if(dx<=-72){ignoreTaskTapUntil=now()+250;askDelete(taskId);return true}return false}
 function onItemPointerDown(e){const item=e.currentTarget;gesture={item,taskId:item.dataset.taskId||'',startX:e.clientX,startY:e.clientY,dx:0,dy:0}}
@@ -143,5 +148,5 @@ window.addEventListener('storage',e=>{if(e.key===LAST_SYNC_KEY)refreshLastSyncUI
 document.addEventListener('touchstart',e=>{if(window.scrollY===0&&!ptrActive)ptrStartY=e.touches[0].clientY},{passive:true});
 document.addEventListener('touchmove',e=>{if(!ptrStartY)return;const dy=e.touches[0].clientY-ptrStartY;if(dy>80&&window.scrollY===0){ptrActive=true;$('ptrIndicator')?.classList.add('visible')}},{passive:true});
 document.addEventListener('touchend',()=>{if(!ptrActive){ptrStartY=0;return}ptrActive=false;ptrStartY=0;refreshFromCloud('pull').catch(handleCloudError).finally(()=>setTimeout(()=>$('ptrIndicator')?.classList.remove('visible'),500))});
-window.addEventListener('load',async()=>{$('proxyUrlInput').value=localStorage.getItem(PROXY_KEY)||'';$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);$('aiToggle')?.classList.toggle('on',aiReportEnabled);initAIStatus();disableNonCoreFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}await initSupabaseSync()});
+window.addEventListener('load',async()=>{$('proxyUrlInput').value=localStorage.getItem(PROXY_KEY)||'';$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);$('aiToggle')?.classList.toggle('on',aiReportEnabled);$('modalSheet')?.addEventListener('pointerdown',startModalGesture);$('modalSheet')?.addEventListener('pointermove',moveModalGesture);$('modalSheet')?.addEventListener('pointerup',endModalGesture);$('modalSheet')?.addEventListener('pointercancel',cancelModalGesture);initAIStatus();disableNonCoreFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}await initSupabaseSync()});
 

@@ -56,13 +56,13 @@ body::after { content:''; position:fixed; inset:auto -10% -24% auto; width:320px
 .container { width:100%; max-width:560px; margin:0 auto; position:relative; z-index:1; }
 
 /* ── Header ── */
-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px; padding:16px 16px 14px; border:1px solid rgba(124,156,255,.16); border-radius:20px; background:linear-gradient(180deg, rgba(17,22,34,.86), rgba(12,16,26,.68)); box-shadow:var(--shadow-md); backdrop-filter:blur(16px) saturate(1.1); -webkit-backdrop-filter:blur(16px) saturate(1.1); }
+header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; padding:2px 2px 0; }
 .header-left .label { font-family:'Space Mono',monospace; font-size:10px; color:var(--accent); letter-spacing:3px; text-transform:uppercase; margin-bottom:4px; }
 h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-shadow:0 0 16px rgba(124,156,255,.12); }
 .count { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); margin-top:10px; }
 .count span { color:var(--accent); }
-.header-btns { display:flex; gap:8px; padding-top:2px; }
-.icon-btn { background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)); border:1px solid rgba(124,156,255,.16); color:var(--muted); width:var(--touch); height:var(--touch); border-radius:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .2s; position:relative; flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.03); }
+.header-btns { display:flex; gap:6px; padding-top:6px; margin-right:2px; }
+.icon-btn { background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)); border:1px solid rgba(124,156,255,.14); color:var(--muted); width:42px; height:42px; border-radius:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .2s; position:relative; flex-shrink:0; box-shadow:inset 0 1px 0 rgba(255,255,255,.03); }
 .icon-btn:hover, .icon-btn:active { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
 .icon-btn:hover svg, .icon-btn:active svg { stroke:var(--accent); }
 .icon-btn.active { border-color:var(--accent); background:rgba(200,241,53,.08); box-shadow:0 0 0 1px rgba(200,241,53,.05), 0 0 18px rgba(200,241,53,.08); }
@@ -112,8 +112,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .add-btn:active { background:var(--accent-dim); transform:scale(.97); }
 
 /* ── Cat selector ── */
-.task-options { display:flex; gap:8px; margin-bottom:18px; align-items:center; flex-wrap:wrap; padding:10px 12px; border:1px solid rgba(124,156,255,.08); border-radius:14px; background:rgba(15,19,29,.5); }
-.task-options-label { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); }
+.task-options { display:flex; gap:8px; margin-bottom:16px; align-items:center; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+.task-options::-webkit-scrollbar { display:none; }
+.task-options-label { display:none; }
 .cat-select-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:8px 14px; border-radius:99px; cursor:pointer; transition:all .2s; display:flex; align-items:center; gap:6px; min-height:36px; }
 .cat-select-btn .dot { width:6px; height:6px; border-radius:50%; }
 .cat-select-btn.work .dot { background:var(--work); }
@@ -205,9 +206,12 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .cat-count { background:var(--border); color:var(--muted); font-size:9px; padding:1px 4px; border-radius:99px; }
 
 /* ── Status dropdown ── */
-.status-dropdown-wrap { margin-left:auto; }
-.status-select { background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:10px; padding:6px 10px; border-radius:8px; cursor:pointer; outline:none; min-height:32px; appearance:none; -webkit-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23555'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; padding-right:24px; }
-.status-select:focus { border-color:var(--accent); }
+.status-dropdown-wrap { margin-left:auto; display:flex; gap:8px; align-items:center; }
+.filter-icon-wrap { position:relative; width:40px; height:40px; flex:0 0 auto; }
+.filter-icon-btn { width:100%; height:100%; background:rgba(255,255,255,.02); border:1px solid rgba(124,156,255,.12); color:var(--muted); border-radius:12px; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.filter-icon-btn svg { width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.status-select { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; appearance:none; -webkit-appearance:none; }
+.filter-icon-wrap:focus-within .filter-icon-btn, .filter-icon-wrap:hover .filter-icon-btn { border-color:var(--accent); color:var(--accent); background:rgba(200,241,53,.06); }
 
 /* ── Task items — slimmer, cleaner ── */
 .task-list { display:flex; flex-direction:column; gap:8px; }
@@ -288,7 +292,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .modal { background:linear-gradient(180deg, rgba(20,24,37,.76), rgba(13,17,27,.74)); border:1px solid rgba(255,255,255,.08); border-radius:24px 24px 0 0; width:100%; max-width:540px; padding:20px 18px 32px; transform:translateY(100%); transition:transform .3s cubic-bezier(.34,1.1,.64,1); display:flex; flex-direction:column; gap:16px; max-height:92vh; overflow-y:auto; -webkit-overflow-scrolling:touch; backdrop-filter:blur(22px) saturate(1.18); -webkit-backdrop-filter:blur(22px) saturate(1.18); box-shadow:0 -18px 48px rgba(0,0,0,.45); }
 .modal-overlay.open .modal { transform:translateY(0); }
 .modal-drag { width:40px; height:4px; background:var(--border); border-radius:99px; margin:0 auto 4px; }
-.modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.modal-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; touch-action:none; }
 .modal-title { font-size:16px; font-weight:700; line-height:1.3; }
 .modal-subtitle { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px; }
 .modal-close { background:none; border:none; color:var(--muted); font-size:24px; cursor:pointer; min-width:var(--touch); min-height:var(--touch); display:flex; align-items:center; justify-content:center; border-radius:8px; flex-shrink:0; }
@@ -357,9 +361,9 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .tag-option-hash { color:var(--accent); font-weight:700; }
 .tag-option-count { margin-left:auto; color:var(--muted); font-size:9px; }
 
-.modal-footer { display:flex; justify-content:flex-end; gap:8px; padding-bottom:4px; }
-.modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
-.modal-icon-actions { display:flex; gap:8px; margin-left:auto; }
+.modal-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-bottom:4px; }
+.modal-actions { display:flex; gap:8px; flex-wrap:wrap; min-height:40px; }
+.modal-icon-actions { display:flex; gap:8px; }
 .modal-icon-btn { width:40px; height:40px; background:rgba(255,255,255,.02); border:1px solid rgba(124,156,255,.12); color:var(--muted); border-radius:12px; cursor:pointer; transition:all .2s ease; display:flex; align-items:center; justify-content:center; padding:0; }
 .modal-icon-btn svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .modal-icon-btn:hover { border-color:rgba(124,156,255,.42); color:#dbe4ff; background:rgba(124,156,255,.08); }
@@ -372,10 +376,10 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .btn-modal-action.accent:hover { border-color:var(--accent); color:var(--accent); background:rgba(193,244,104,.05); }
 .btn-modal-action.danger:hover { border-color:#ff8a8a; color:#ffd0d0; background:rgba(255,107,107,.05); }
 .btn-modal-action:disabled { opacity:.45; cursor:not-allowed; }
-.btn-save { background:var(--accent); color:#0d0d0d; border:none; font-family:'Space Mono',monospace; font-size:12px; font-weight:700; padding:14px 24px; border-radius:10px; cursor:pointer; min-height:var(--touch); transition:background .2s; }
-.btn-save:active { background:var(--accent-dim); }
-.btn-cancel { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Space Mono',monospace; font-size:12px; padding:14px 18px; border-radius:10px; cursor:pointer; min-height:var(--touch); }
-.btn-cancel:active { border-color:var(--text); color:var(--text); }
+.modal-save-btn { width:46px; height:46px; border:none; border-radius:14px; background:linear-gradient(135deg, var(--accent), #d8ff66); color:#0d0d0d; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 14px 28px rgba(200,241,53,.18); transition:transform .2s, box-shadow .2s; flex:0 0 auto; }
+.modal-save-btn svg { width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.modal-save-btn:hover { transform:translateY(-1px); box-shadow:0 18px 34px rgba(200,241,53,.22); }
+.modal-save-btn:active { transform:scale(.96); }
 
 /* ── Calendar Modal ── */
 .cal-modal { background:linear-gradient(180deg, rgba(19,24,36,.94), rgba(15,18,27,.92)); border:1px solid rgba(124,156,255,.14); border-radius:18px; width:100%; max-width:360px; padding:20px; display:flex; flex-direction:column; gap:14px; transform:scale(.95); transition:transform .25s ease; box-shadow:var(--shadow-lg); }
@@ -448,12 +452,13 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
 @media (max-width: 640px) {
   body { padding:16px 12px 110px; }
-  header { padding:14px 14px 12px; margin-bottom:18px; border-radius:18px; }
+  header { padding:0; margin-bottom:16px; }
   h1 { font-size:34px; }
   .header-left .label { letter-spacing:2.4px; }
-  .task-options { padding:8px 10px; }
   .week-banner { padding:9px 10px; }
   .task-item { padding:11px 12px; }
+  .header-btns { gap:5px; padding-top:4px; }
+  .icon-btn { width:38px; height:38px; }
 }
 </style>
 </head>
@@ -590,21 +595,40 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 
   <!-- Task Options + Status filter dropdown on same row -->
   <div class="task-options">
-    <span class="task-options-label">Add to:</span>
     <button class="cat-select-btn work active" id="selWork" onclick="selectCat('work')"><div class="dot"></div>Work</button>
     <button class="cat-select-btn personal" id="selPersonal" onclick="selectCat('personal')"><div class="dot"></div>Personal</button>
     <div class="status-dropdown-wrap">
-      <select class="status-select" id="statusSelect" onchange="setFilterFromSelect(this.value)">
+      <div class="filter-icon-wrap" title="Filter">
+        <div class="filter-icon-btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 6h16"></path>
+            <path d="M7 12h10"></path>
+            <path d="M10 18h4"></path>
+          </svg>
+        </div>
+        <select class="status-select" id="statusSelect" onchange="setFilterFromSelect(this.value)">
         <option value="all">All</option>
         <option value="active">Active</option>
         <option value="done">Done</option>
         <option value="blocked">Blocked</option>
-      </select>
-      <select class="status-select" id="sortSelect" onchange="setSortFromSelect(this.value)" style="margin-left:6px;">
+        </select>
+      </div>
+      <div class="filter-icon-wrap" title="Sort">
+        <div class="filter-icon-btn" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M7 6v12"></path>
+            <path d="M4 15l3 3 3-3"></path>
+            <path d="M14 8h6"></path>
+            <path d="M14 12h4"></path>
+            <path d="M14 16h2"></path>
+          </svg>
+        </div>
+        <select class="status-select" id="sortSelect" onchange="setSortFromSelect(this.value)">
         <option value="default">Default</option>
         <option value="priority">Priority ↓</option>
         <option value="date">Date ↑</option>
-      </select>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -757,16 +781,18 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
       <button class="btn-gen-note" id="btnPolishNote" onclick="polishNotes()">✦ Auto-fill</button>
     </div>
 
-    <div class="modal-actions" id="modalActions"></div>
-
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
-      <button class="btn-save" onclick="saveModal()">Save</button>
+      <div class="modal-actions" id="modalActions"></div>
+      <button class="modal-save-btn" onclick="saveModal()" title="Save">
+        <svg viewBox="0 0 24 24">
+          <path d="M5 12.5l4.2 4.2L19 7"></path>
+        </svg>
+      </button>
     </div>
   </div>
 </div>
 
-<div class="build-version">v0.8.0</div>
+<div class="build-version">v0.8.1</div>
 <script src="./main-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

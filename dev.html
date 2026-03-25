@@ -102,10 +102,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 [data-theme="light"] .week-banner,
 [data-theme="light"] .task-item,
 [data-theme="light"] .report-card,
-[data-theme="light"] .archive-overlay .archive-sheet,
-[data-theme="light"] .cal-overlay .cal-sheet,
-[data-theme="light"] .modal-sheet,
-[data-theme="light"] .confirm-card {
+[data-theme="light"] .archive-sheet,
+[data-theme="light"] .cal-modal,
+[data-theme="light"] .modal,
+[data-theme="light"] .confirm-box,
+[data-theme="light"] .action-sheet {
   background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94));
   border-color: rgba(22,33,49,.08);
   box-shadow: var(--shadow-md);
@@ -124,6 +125,21 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 [data-theme="light"] .sync-indicator { background:rgba(255,255,255,.96); color:#233248; border-top-color:rgba(22,33,49,.08); }
 [data-theme="light"] .task-item.swipe-right { background:linear-gradient(90deg, rgba(45,138,95,.12), rgba(45,138,95,0) 65%), linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94)); }
 [data-theme="light"] .task-item.swipe-left { background:linear-gradient(270deg, rgba(222,75,75,.12), rgba(222,75,75,0) 65%), linear-gradient(180deg, rgba(255,255,255,.96), rgba(247,248,251,.94)); }
+[data-theme="light"] .task-item.blocked .task-text { color:#b33a3a; }
+[data-theme="light"] .blocked-badge,
+[data-theme="light"] .archive-blocked-badge { color:#b33a3a; background:rgba(179,58,58,.08); border-color:rgba(179,58,58,.18); }
+[data-theme="light"] .archive-item-text { color:#243247; }
+[data-theme="light"] .archive-search,
+[data-theme="light"] .notes-area,
+[data-theme="light"] .context-input,
+[data-theme="light"] .tag-row,
+[data-theme="light"] .day-pill,
+[data-theme="light"] .priority-pill { background:rgba(255,255,255,.88); border-color:rgba(22,33,49,.08); color:var(--muted); }
+[data-theme="light"] .modal-timestamps { color:rgba(22,33,49,.48); }
+[data-theme="light"] .tag-dropdown { background:#ffffff; border-color:rgba(22,33,49,.10); box-shadow:0 10px 26px rgba(56,77,110,.10); }
+[data-theme="light"] .tag-option { color:var(--text); }
+[data-theme="light"] .tag-option:hover,
+[data-theme="light"] .tag-option.highlighted { background:rgba(154,181,31,.08); }
 .theme-row { display:flex; align-items:center; gap:10px; }
 .theme-copy { flex:1; min-width:0; }
 .theme-value { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:.8px; text-transform:uppercase; margin-top:4px; }
@@ -207,6 +223,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .report-card { position:absolute; left:12px; right:12px; top:var(--report-top, 120px); bottom:16px; background:linear-gradient(180deg, rgba(14,18,31,.94), rgba(11,14,24,.92)); border:1px solid rgba(124,156,255,.24); border-radius:18px; padding:18px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; box-shadow:0 22px 60px rgba(0,0,0,.6); transform:translateY(-8px) scale(.97); opacity:0; transition:transform .25s ease, opacity .2s ease; pointer-events:none; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
 .report-overlay.open .report-card { transform:translateY(0) scale(1); opacity:1; pointer-events:all; }
 .report-card-arrow { width:10px; height:10px; background:#0d1020; border-top:1px solid rgba(124,156,255,.25); border-left:1px solid rgba(124,156,255,.25); position:absolute; top:-6px; right:24px; transform:rotate(45deg); }
+[data-theme="light"] .report-card-arrow { background:#ffffff; border-top-color:rgba(22,33,49,.10); border-left-color:rgba(22,33,49,.10); }
 .report-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; gap:8px; }
 .report-title { font-family:'Space Mono',monospace; font-size:10px; color:var(--work); letter-spacing:2px; text-transform:uppercase; }
 .report-date { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); margin-top:4px; }
@@ -512,6 +529,10 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   .task-options { padding:8px 10px; }
   .week-banner { padding:9px 10px; }
   .task-item { padding:11px 12px; }
+}
+@media (min-width: 720px) {
+  .report-card { left:50%; right:auto; width:min(560px, calc(100vw - 32px)); transform:translateX(-50%) translateY(-8px) scale(.97); }
+  .report-overlay.open .report-card { transform:translateX(-50%) translateY(0) scale(1); }
 }
 </style>
 </head>
@@ -834,7 +855,7 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
   </div>
 </div>
 
-<div class="build-version">v0.7.3-dev</div>
+<div class="build-version">v0.7.4-dev</div>
 <script src="./dev-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

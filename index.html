@@ -2192,17 +2192,14 @@ function schedulePeriodicSync() {
 
 // ── Google Sheets Sync ────────────────────────────────────────
 // SETUP: Replace with your OAuth Client ID from Google Cloud Console
-// Guide: See SETUP.md included in this zip
 const GOOGLE_CLIENT_ID = '515252740980-j0v2em58m97e9put88p550o1kdlo492p.apps.googleusercontent.com';
 const SHEET_NAME = 'Weekly Tracker Task Database';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive';
-const PROXY = 'https://wtt-proxy.onrender.com';
 
 let gAccessToken = localStorage.getItem('wtt_gtoken') || null;
 let gTokenExpiry = parseInt(localStorage.getItem('wtt_gexpiry') || '0');
 let gUserId = localStorage.getItem('wtt_userid') || null;
 let sheetId = localStorage.getItem('wtt_sheetid') || null;
-let isSyncing = false;
 let syncDebounceTimer = null;
 let isPushing = false; // true while pushAllTasksToSheet is running
 
@@ -2264,6 +2261,8 @@ function googleSignIn() {
         updateSyncUI('syncing', '');
         renderSyncSettings();
         await initSheet();
+        startTokenKeepalive();
+        schedulePeriodicSync();
       }
     });
     client.requestAccessToken();
@@ -2274,11 +2273,15 @@ function googleSignIn() {
 }
 
 function googleSignOut() {
+  if (gAccessToken && typeof google !== 'undefined' && google.accounts?.oauth2?.revoke) {
+    try { google.accounts.oauth2.revoke(gAccessToken, () => {}); } catch (_) {}
+  }
   gAccessToken = null; gTokenExpiry = 0; gUserId = null; sheetId = null;
   localStorage.removeItem('wtt_gtoken');
   localStorage.removeItem('wtt_gexpiry');
   localStorage.removeItem('wtt_userid');
   localStorage.removeItem('wtt_sheetid');
+  if (keepaliveTimer) clearInterval(keepaliveTimer);
   updateSyncUI('off', '');
   renderSyncSettings();
 }
@@ -2315,7 +2318,8 @@ async function sheetsRequest(method, path, body) {
 }
 
 async function driveRequest(method, path, body) {
-  if (!isTokenValid()) return null;
+  const valid = isTokenValid() || await getValidToken();
+  if (!valid) return null;
   const res = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
     method,
     headers: { 'Authorization': `Bearer ${gAccessToken}`, 'Content-Type': 'application/json' },
@@ -2326,6 +2330,108 @@ async function driveRequest(method, path, body) {
   // DELETE returns 204 No Content — don't try to parse JSON
   if (res.status === 204 || method === 'DELETE') return true;
   return res.json();
+}
+
+function normalizeTaskForSync(task) {
+  return {
+    ...task,
+    category: task.category || 'work',
+    priority: task.priority || 'medium',
+    scheduledDate: task.scheduledDate || null,
+    notes: task.notes || '',
+    completedAt: task.completedAt || null,
+    updatedAt: task.updatedAt || task.createdAt || Date.now(),
+    tag: task.tag || null,
+    sortOrder: task.sortOrder ?? task.createdAt ?? Date.now()
+  };
+}
+
+function parseSheetTaskRow(row) {
+  return normalizeTaskForSync({
+    id: parseInt(row[0], 10) || Date.now(),
+    text: row[1] || '',
+    category: row[2] || 'work',
+    done: row[3] === 'true',
+    blocked: row[4] === 'true',
+    priority: row[5] || 'medium',
+    scheduledDate: row[6] || null,
+    notes: row[7] || '',
+    createdAt: parseInt(row[8], 10) || Date.now(),
+    completedAt: row[9] ? parseInt(row[9], 10) : null,
+    updatedAt: parseInt(row[10], 10) || parseInt(row[8], 10) || 0,
+    tag: row[11] || null,
+    sortOrder: row[12] === undefined || row[12] === '' ? (parseInt(row[8], 10) || 0) : parseInt(row[12], 10)
+  });
+}
+
+function taskToSheetRow(task) {
+  const t = normalizeTaskForSync(task);
+  return [
+    t.id,
+    t.text,
+    t.category,
+    t.done ? 'true' : 'false',
+    t.blocked ? 'true' : 'false',
+    t.priority,
+    t.scheduledDate || '',
+    t.notes,
+    t.createdAt || '',
+    t.completedAt || '',
+    t.updatedAt,
+    t.tag || '',
+    t.sortOrder
+  ];
+}
+
+function mergeTaskCollections(localTasks, remoteTasks, tombstones = getTombstones()) {
+  const merged = new Map();
+
+  for (const remoteTask of remoteTasks.map(normalizeTaskForSync)) {
+    const tombstoneTs = tombstones[String(remoteTask.id)];
+    if (!tombstoneTs || tombstoneTs < (remoteTask.updatedAt || 0)) {
+      merged.set(remoteTask.id, remoteTask);
+    }
+  }
+
+  for (const localTask of localTasks.map(normalizeTaskForSync)) {
+    const current = merged.get(localTask.id);
+    if (!current || (localTask.updatedAt || 0) >= (current.updatedAt || 0)) {
+      merged.set(localTask.id, localTask);
+    }
+  }
+
+  return [...merged.values()].sort((a, b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+}
+
+async function fetchSheetTasks(targetSheetId = sheetId) {
+  const data = await sheetsRequest('GET', `/${targetSheetId}/values/Tasks!A2:M?majorDimension=ROWS`);
+  const rows = data?.values || [];
+  return rows.filter(row => row[0]).map(parseSheetTaskRow);
+}
+
+async function writeTasksToSheet(nextTasks, previousRemoteCount = null) {
+  const rows = nextTasks.map(taskToSheetRow);
+  if (rows.length > 0) {
+    const targetRange = `/${sheetId}/values/Tasks!A2:M${rows.length + 1}?valueInputOption=RAW`;
+    const writeRes = await sheetsRequest('PUT', targetRange, { values: rows });
+    if (!writeRes) return false;
+  }
+
+  const staleCount = previousRemoteCount == null ? 0 : Math.max(previousRemoteCount - rows.length, 0);
+  if (staleCount > 0) {
+    const clearStart = rows.length + 2;
+    const clearEnd = clearStart + staleCount - 1;
+    await sheetsRequest('POST', `/${sheetId}/values/Tasks!A${clearStart}:M${clearEnd}:clear`, {});
+  }
+
+  if (rows.length === 0 && previousRemoteCount > 0) {
+    await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M${previousRemoteCount + 1}:clear`, {});
+  }
+
+  return true;
 }
 
 
@@ -2389,41 +2495,8 @@ async function initSheet() {
 async function mergeWithSheet() {
   if (isPushing) return;
   updateSyncUI('syncing', 'Syncing...');
-  const data = await sheetsRequest('GET', `/${sheetId}/values/Tasks!A2:M?majorDimension=ROWS`);
-  const rows = data?.values || [];
-  const tombstones = getTombstones();
-
-  const sheetTasks = rows.filter(r => r[0]).map(r => ({
-    id: parseInt(r[0]) || Date.now(),
-    text: r[1] || '',
-    category: r[2] || 'work',
-    done: r[3] === 'true',
-    blocked: r[4] === 'true',
-    priority: r[5] || 'medium',
-    scheduledDate: r[6] || null,
-    notes: r[7] || '',
-    createdAt: parseInt(r[8]) || Date.now(),
-    completedAt: r[9] ? parseInt(r[9]) : null,
-    updatedAt: parseInt(r[10]) || parseInt(r[8]) || 0,
-    tag: r[11] || null,
-    sortOrder: parseInt(r[12]) || parseInt(r[8]) || 0
-  })).filter(t => !(tombstones[String(t.id)] && tombstones[String(t.id)] >= (t.updatedAt || 0)));
-
-  const localTasks = tasks.map(t => ({ ...t, updatedAt: t.updatedAt || t.createdAt || 0 }));
-  const finalMap = new Map();
-
-  for (const t of sheetTasks) finalMap.set(t.id, t);
-  for (const localTask of localTasks) {
-    const current = finalMap.get(localTask.id);
-    if (!current || (localTask.updatedAt || 0) > (current.updatedAt || 0)) {
-      finalMap.set(localTask.id, localTask);
-    }
-  }
-
-  tasks = [...finalMap.values()].sort((a,b) => {
-    if (a.sortOrder !== undefined && b.sortOrder !== undefined) return a.sortOrder - b.sortOrder;
-    return b.createdAt - a.createdAt;
-  });
+  const sheetTasks = await fetchSheetTasks();
+  tasks = mergeTaskCollections(tasks, sheetTasks);
 
   localStorage.setItem('wtt_tasks', JSON.stringify(tasks));
   clearTombstonesForActiveTasks();
@@ -2442,18 +2515,13 @@ async function pushAllTasksToSheet() {
   if (!sheetId || !isTokenValid()) return false;
   isPushing = true;
   try {
-    await sheetsRequest('POST', `/${sheetId}/values/Tasks!A2:M:clear`, {});
-    if (tasks.length === 0) return true;
-    const rows = tasks.map(t => [
-      t.id, t.text, t.category||'work',
-      t.done?'true':'false', t.blocked?'true':'false',
-      t.priority||'medium', t.scheduledDate||'',
-      t.notes||'', t.createdAt||'', t.completedAt||'',
-      t.updatedAt || t.createdAt || Date.now(),
-      t.tag||'',
-      t.sortOrder ?? t.createdAt
-    ]);
-    await sheetsRequest('PUT', `/${sheetId}/values/Tasks!A2:M?valueInputOption=RAW`, { values: rows });
+    const remoteTasks = await fetchSheetTasks();
+    const mergedTasks = mergeTaskCollections(tasks, remoteTasks);
+    const wrote = await writeTasksToSheet(mergedTasks, remoteTasks.length);
+    if (!wrote) return false;
+    tasks = mergedTasks;
+    save();
+    render();
     return true;
   } finally {
     isPushing = false;
@@ -2499,7 +2567,7 @@ async function runFullSync(reason = 'manual', options = {}) {
 }
 
 function scheduleFullSync(reason = 'mutation') {
-  if (!sheetId || !isTokenValid()) return;
+  if (!sheetId || !(isTokenValid() || gUserId)) return;
   if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
   syncDebounceTimer = setTimeout(() => { runFullSync(reason).catch(() => {}); }, 500);
 }
@@ -2709,7 +2777,8 @@ function handleArchiveOverlayClick(e) {
 const ARCHIVE_TAB = 'Archive';
 
 async function ensureArchiveTab() {
-  if (!sheetId || !isTokenValid()) return false;
+  const valid = sheetId && (isTokenValid() || await getValidToken());
+  if (!valid) return false;
   // Check if Archive tab exists
   const meta = await sheetsRequest('GET', `/${sheetId}?fields=sheets.properties.title`);
   const exists = meta?.sheets?.some(s => s.properties.title === ARCHIVE_TAB);
@@ -2759,14 +2828,23 @@ function archiveEntryToRow(t) {
 }
 
 async function rewriteArchiveSheet(items) {
-  if (!sheetId || !isTokenValid()) return false;
+  const valid = sheetId && (isTokenValid() || await getValidToken());
+  if (!valid) return false;
   const ok = await ensureArchiveTab();
   if (!ok) return false;
-  await sheetsRequest('POST', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O:clear`, {});
+
+  const current = await sheetsRequest('GET', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?majorDimension=ROWS`);
+  const existingCount = current?.values?.length || 0;
   if (items.length) {
-    await sheetsRequest('PUT', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O?valueInputOption=RAW`, {
+    const writeRes = await sheetsRequest('PUT', `/${sheetId}/values/${ARCHIVE_TAB}!A2:O${items.length + 1}?valueInputOption=RAW`, {
       values: items.map(archiveEntryToRow)
     });
+    if (!writeRes) return false;
+  }
+  if (existingCount > items.length) {
+    const clearStart = items.length + 2;
+    const clearEnd = existingCount + 1;
+    await sheetsRequest('POST', `/${sheetId}/values/${ARCHIVE_TAB}!A${clearStart}:O${clearEnd}:clear`, {});
   }
   return true;
 }

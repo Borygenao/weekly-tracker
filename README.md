@@ -1,57 +1,88 @@
-# Weekly. — Task Tracker
+# Weekly Task Tracker
 
-A mobile-first weekly task tracker with AI-powered daily and weekly reports, Google Sheets sync, and a clean dark UI.
+Mobile-first weekly task tracker with:
 
-## Features
+- work and personal task lanes
+- AI-generated daily and weekly reports
+- Google Sheets sync for cross-device use
+- installable PWA support
 
-- **Work & Personal tasks** — separate categories with color coding
-- **Priority detection** — AI automatically labels tasks High / Medium / Low
-- **Schedule by day** — assign tasks to specific days of the week
-- **3-state checkbox** — cycle between Pending → Done → Blocked
-- **Notes with voice input** — dictate notes, AI cleans them up
-- **Daily report** — professional end-of-day work update (Completed, Blockers, Up Next)
-- **Weekly report** — Completed and Incomplete summary for the week
-- **Monthly calendar** — visual performance indicator per day
-- **Google Sheets sync** — tasks sync across all your devices in real time
-- **PWA** — installable on iPhone and Android from the browser
+## Repos
+
+- Main app: `weekly-tracker`
+- Proxy: `wtt-proxy`
+
+## How It Works
+
+- The frontend is a static app hosted from `index.html`.
+- AI features call the proxy at `/api/claude`.
+- Google Sheets sync uses Google's browser OAuth flow directly in the app.
+- The proxy's Google token-store routes are disabled by default and are not required for normal Sheets sync.
+
+## Main Features
+
+- task scheduling by day
+- pending / done / blocked task states
+- note capture and voice input cleanup
+- AI priority detection
+- daily and weekly work reports
+- monthly calendar view
+- archive view backed by local cache and Google Sheets
 
 ## Setup
 
-### 1. AI Proxy (Render.com)
+### 1. Deploy the proxy
 
-The app uses a proxy server to call the Claude API securely.
+Deploy the `wtt-proxy` repo as a Node web service.
 
-1. Deploy the `wtt-proxy` repo to [Render.com](https://render.com) as a Web Service
-2. Add environment variable: `GEMINI_API_KEY` = your key from [Google AI Studio](https://aistudio.google.com)
-3. Copy your Render URL (e.g. `https://wtt-proxy.onrender.com`)
+Required environment variables:
 
-### 2. App Configuration
+- `CLAUDE_API_KEY`: Anthropic API key used for AI features
 
-1. Open the app
-2. Tap ⚙ Settings
-3. Paste your Render URL into **AI Proxy URL** → Save
-4. Optionally paste your Google OAuth Client ID to enable cross-device sync
+Recommended environment variables:
 
-### 3. Google Sheets Sync (optional)
+- `ALLOWED_ORIGINS`: comma-separated origins allowed to call the proxy
+  Example: `https://borygenao.github.io,http://localhost:3000`
 
-Follow the instructions in `SETUP.md` to configure Google OAuth for cross-device task sync.
+Optional environment variables for the disabled-by-default Google token store:
 
-## Install on iPhone
+- `ENABLE_GOOGLE_TOKEN_STORE=true`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `TOKEN_STORE_FILE`
 
-1. Open the app URL in Safari
-2. Tap **Share → Add to Home Screen**
-3. Tap **Add**
+Notes:
 
-The app installs as a PWA with a custom icon and runs fullscreen.
+- `/api/auth/*` routes stay off unless `ENABLE_GOOGLE_TOKEN_STORE=true`.
+- If you enable that token store on Render and need persistence across restarts, point `TOKEN_STORE_FILE` at persistent disk storage.
 
-## Tech Stack
+### 2. Configure the app
 
-- Vanilla HTML / CSS / JavaScript — no frameworks
-- Google Sheets API for sync
-- Claude for AI features via the proxy server
-- Hosted on GitHub Pages
-- AI proxy hosted on Render.com
+1. Open the app.
+2. Open `Settings`.
+3. Paste the deployed proxy URL into `AI / API Connection`.
+4. Save it.
 
-## AI Proxy
+### 3. Configure Google Sheets sync
 
-The proxy server lives in a separate repo: `wtt-proxy`. It receives requests from the app, forwards them to the Claude API with your key, and returns the response. Your API key never touches the browser.
+The app uses the Google browser OAuth client configured in `index.html`.
+
+To use your own Google project:
+
+1. Create an OAuth client in Google Cloud.
+2. Replace `GOOGLE_CLIENT_ID` in `index.html`.
+3. Add your deployed app origin to the OAuth allowed origins.
+4. Sign in from each device that should sync.
+
+## Sync Behavior
+
+- Each device keeps a local cache in `localStorage`.
+- Sync merges local and remote tasks using `updatedAt`.
+- Writes no longer clear the sheet first; the app writes merged rows, then trims stale tail rows only after a successful write.
+- Archive data is also cached locally and mirrored to a separate `Archive` tab in the same spreadsheet.
+
+## Deployment Notes
+
+- GitHub Pages can host the main app.
+- Render can host the proxy.
+- If AI status shows unavailable, check the saved proxy URL and the proxy's allowed origins.

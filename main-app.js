@@ -1,15 +1,20 @@
 ﻿const SUPABASE_URL='https://zylbttyclmkzkrlpdyzw.supabase.co';
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
-const BUILD='v0.8.5';
+const NOTIF_TABLE='notification_settings';
+const BUILD='v0.8.6';
+const HOME_PATH='/weekly-tracker/';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';
 const PROXY_KEY='wtt_proxy_url';
+const THEME_KEY='wtt_theme';
+const WHATS_NEW_KEY='wtt_whats_new_seen_0_8_6';
 let tasks=[],archiveData=[],filter='all',sortMode='default',category='all',newTaskCat='work';
 let activeTaskId=null,pendingScheduleDate='',pendingPriority='medium',pendingDeleteId=null,tagHighlightIndex=-1;
 let settingsOpen=false,archiveOpen=false,calOpen=false,reportOpen=false,reportType='daily',reportText='',ptrStartY=0,ptrActive=false,syncTimer=null;
 let client=null,user=null,channel=null,lastCloudError='',gesture=null,ignoreTaskTapUntil=0,calAnchor=new Date(),modalGesture=null;
-let aiReportEnabled=localStorage.getItem('wtt_ai_report')!=='off';
+let notifSettings={enabled:true,morningEnabled:true,morningTime:'08:00',eveningEnabled:true,eveningTime:'20:00'},swReg=null,notifBound=false;
+let aiReportEnabled=false;
 const $=id=>document.getElementById(id);
 const now=()=>Date.now();
 const key=v=>{if(!v)return'';const d=v instanceof Date?v:new Date(v);if(Number.isNaN(d.getTime()))return'';return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
@@ -27,9 +32,17 @@ function renderWorkflowSettings(){const t=$('autoArchiveToggle');if(t)t.classLis
 function toggleAutoArchive(){localStorage.setItem(AUTO_ARCHIVE_KEY,prefs().autoArchive?'0':'1');renderWorkflowSettings()}
 function getProxyBaseUrl(){return (localStorage.getItem(PROXY_KEY)||'https://wtt-proxy.onrender.com').replace(/\/+$/,'')}
 function saveProxyUrl(){localStorage.setItem(PROXY_KEY,$('proxyUrlInput')?.value?.trim()||'');indicator('Saved');initAIStatus()}
+function themeValue(){return localStorage.getItem(THEME_KEY)==='light'?'light':'dark'}
+function applyTheme(theme=themeValue()){const next=theme==='light'?'light':'dark';document.documentElement.setAttribute('data-theme',next);const meta=$('themeColorMeta');if(meta)meta.setAttribute('content',next==='light'?'#f7f8fb':'#0d0d0d');const toggle=$('themeToggle'),label=$('themeModeText');if(toggle)toggle.classList.toggle('on',next==='light');if(label)label.textContent=next==='light'?'Light mode':'Dark mode'}
+function toggleTheme(){const next=themeValue()==='light'?'dark':'light';localStorage.setItem(THEME_KEY,next);applyTheme(next);indicator(next==='light'?'Light mode enabled':'Dark mode enabled')}
 function setAIStatus(connected,text){const dot=$('aiStatusDot'),txt=$('aiStatusText'),ai=$('aiDot');if(dot)dot.classList.toggle('on',!!connected);if(txt)txt.textContent=text||(connected?'Connected via server':'Proxy unavailable');if(ai)ai.style.display=connected?'block':'none'}
-async function initAIStatus(){setAIStatus(false,'Checking proxy...');try{const res=await fetch(getProxyBaseUrl()+'/',{method:'GET'});const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error('Proxy unavailable');setAIStatus(true,data.message||'Connected via server')}catch(_err){setAIStatus(false,'Proxy unavailable')}}
-function disableNonCoreFeatures(){if($('notifSettingsRow'))$('notifSettingsRow').innerHTML='<div class="settings-hint">Notifications come back after sync parity.</div>';if($('notifTimesRow'))$('notifTimesRow').style.display='none'}
+function initAIStatus(){setAIStatus(false,'AI features are currently unavailable')}
+function disableAIFeatures(){const autoFill=$('btnPolishNote');if(autoFill)autoFill.style.display='none';const aiToggle=$('aiToggle');if(aiToggle)aiToggle.style.display='none';const aiLabel=document.querySelector('.report-ai-toggle');if(aiLabel)aiLabel.style.display='none';const aiDot=$('aiDot');if(aiDot)aiDot.style.display='none'}
+function openWhatsNew(){const overlay=$('whatsNewOverlay');if(!overlay)return;overlay.classList.add('open');document.body.style.overflow='hidden'}
+function closeWhatsNew(){const overlay=$('whatsNewOverlay');if(!overlay)return;overlay.classList.remove('open');document.body.style.overflow='';localStorage.setItem(WHATS_NEW_KEY,'1')}
+function handleWhatsNewOverlay(e){if(e.target?.id==='whatsNewOverlay')closeWhatsNew()}
+function showWhatsNewIfNeeded(){if(localStorage.getItem(WHATS_NEW_KEY)==='1')return;setTimeout(()=>openWhatsNew(),350)}
+function disableNonCoreFeatures(){}
 function toggleSettings(){settingsOpen=!settingsOpen;$('settingsPanel')?.classList.toggle('open',settingsOpen);$('settingsBtn')?.classList.toggle('active',settingsOpen)}
 function toggleCalendar(force){calOpen=typeof force==='boolean'?force:!calOpen;$('calOverlay')?.classList.toggle('open',calOpen);$('calBtn')?.classList.toggle('active',calOpen);if(calOpen)renderCalendar()}
 function toggleArchive(force){archiveOpen=typeof force==='boolean'?force:!archiveOpen;$('archiveOverlay')?.classList.toggle('open',archiveOpen);$('archiveBtn')?.classList.toggle('active',archiveOpen);if(archiveOpen)renderArchive()}
@@ -48,163 +61,53 @@ function toggleReport(event){const overlay=$('reportOverlay');if(!overlay)return
 function closeReport(){reportOpen=false;$('reportOverlay')?.classList.remove('open');$('reportBtn')?.classList.remove('active');document.body.style.overflow=''}
 function handleReportOverlayClick(e){if(e.target?.id==='reportOverlay')closeReport()}
 function setReportType(type){reportType=type==='weekly'?'weekly':'daily';$('typeBtnDaily')?.classList.toggle('active',reportType==='daily');$('typeBtnWeekly')?.classList.toggle('active',reportType==='weekly');$('reportDate').textContent=reportType==='daily'?new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'}):weekLabel();$('reportBody').innerHTML=`<div class=\"report-generating\">Tap Generate to create your ${reportType} report</div>`;$('copyReportBtn').style.display='none';reportText=''}
-async function claudeCall(prompt,maxTokens=300){const res=await fetch(getProxyBaseUrl()+'/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:maxTokens,messages:[{role:'user',content:prompt}]})});const data=await res.json();if(!res.ok||data.error)throw new Error(data.error||JSON.stringify(data));return data.content?.[0]?.text?.trim()||''}
+async function claudeCall(){throw new Error('AI disabled')}
 function fixGrammar(text){if(!text||text.length<3)return text;let s=text.trim();s=s.charAt(0).toUpperCase()+s.slice(1);s=s.replace(/\bi\b/g,'I').replace(/\bi'm\b/gi,"I'm").replace(/\bi've\b/gi,"I've").replace(/\bi'll\b/gi,"I'll").replace(/  +/g,' ').replace(/^(basically|actually|just|so|well|ok|okay),?\s+/i,'');if(s.length>4&&!/[.!?]$/.test(s))s+='.';return s.replace(/\bwasnt\b/gi,"wasn't").replace(/\bdidnt\b/gi,"didn't").replace(/\bdoesnt\b/gi,"doesn't").replace(/\bcant\b/gi,"can't").replace(/\bwont\b/gi,"won't").replace(/\bisnt\b/gi,"isn't").replace(/\barent\b/gi,"aren't").replace(/\bhasnt\b/gi,"hasn't").replace(/\bhavent\b/gi,"haven't")}
 function fixGrammarLines(lines){return lines.map(line=>fixGrammar(line))}
-function toggleAI(){aiReportEnabled=!aiReportEnabled;localStorage.setItem('wtt_ai_report',aiReportEnabled?'on':'off');$('aiToggle')?.classList.toggle('on',aiReportEnabled)}
-async function generateDailyReport(){
-  const tk=today(),tmk=tomorrow(),pool=reportPool();
-  const completed=pool.filter(t=>doneDate(t)===tk).sort((a,b)=>(b.completedAt||b.archivedAt||0)-(a.completedAt||a.archivedAt||0));
-  const blocked=tasks.filter(t=>t.category==='work'&&t.blocked).sort(cmp);
-  const tomorrowTasks=tasks.filter(t=>t.category==='work'&&!t.done&&!t.blocked&&t.scheduledDate===tmk).sort(cmp);
-  const sections=[
-    reportSection('Completed Today',completed,'No work tasks completed today.'),
-    reportSection('Blockers',blocked,'No blockers reported.',blockedLine),
-    reportSection('Tomorrow',tomorrowTasks,'No work tasks scheduled for tomorrow.')
-  ];
-  reportText=`# Daily Work Update\n${new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}\n\n${sections.map(s=>s.md).join('\n\n')}`;
-  $('reportBody').innerHTML=sections.map(s=>s.html).join('');
-  $('copyReportBtn').style.display='inline-block';
-  if(!aiReportEnabled)return;
-  try{
-    const payload={
-      completedToday:completed.map(t=>({task:t.text,notes:t.notes||''})),
-      blockedTasks:blocked.map(t=>({task:t.text,notes:t.notes||''})),
-      scheduledTomorrow:tomorrowTasks.map(t=>({task:t.text,notes:t.notes||'',priority:t.priority||''}))
-    };
-    const report=await claudeCall(`You are writing a concise but manager-ready daily work update.
-
-Use the task data below to produce a noticeably more polished report than a raw task list.
-
-Completed today: ${JSON.stringify(payload.completedToday)}
-Blocked tasks: ${JSON.stringify(payload.blockedTasks)}
-Tomorrow tasks: ${JSON.stringify(payload.scheduledTomorrow)}
-
-Requirements:
-- Keep the tone professional and specific.
-- Do not repeat the task list mechanically.
-- For completed work, summarize outcomes or progress where possible.
-- For blockers, explain the issue or impact if notes suggest one.
-- For tomorrow, frame the tasks as next steps or priorities.
-- Keep bullets concise, usually one sentence each.
-
-Return exactly:
-###COMPLETED###
-- ...
-###BLOCKERS###
-- ...
-###TOMORROW###
-- ...`,900);
-    const parse=(start,end,fallback)=>{
-      const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));
-      const lines=m?fixGrammarLines(m[1].trim().split('\n').map(l=>l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean)):[fallback];
-      return lines.length?lines:[fallback];
-    };
-    const aiSections=[
-      {title:'Completed Today',lines:parse('###COMPLETED###','###BLOCKERS###','No work tasks completed today.')},
-      {title:'Blockers',lines:parse('###BLOCKERS###','###TOMORROW###','No blockers reported.')},
-      {title:'Tomorrow',lines:parse('###TOMORROW###','', 'No work tasks scheduled for tomorrow.')}
-    ];
-    reportText=`# Daily Work Update\n${new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}\n\n${aiSections.map(s=>`## ${s.title}\n${s.lines.map(l=>`- ${l}`).join('\n')}`).join('\n\n')}`;
-    $('reportBody').innerHTML=aiSections.map(s=>`<div class="report-section"><div class="report-section-title">${esc(s.title)}</div><div class="report-content">${s.lines.map(l=>`<div class="report-row"><span class="report-bullet">•</span><span>${esc(l)}</span></div>`).join('')}</div></div>`).join('');
-  }catch(_e){}
-}
-async function generateWeeklyReport(){
-  const {start,end}=getWeekWindow(),pool=reportPool();
-  const completed=pool.filter(t=>inRange(doneDate(t),start,end)).sort((a,b)=>(b.completedAt||b.archivedAt||0)-(a.completedAt||a.archivedAt||0));
-  const blocked=tasks.filter(t=>t.category==='work'&&t.blocked).sort(cmp);
-  const sections=[
-    taggedReportSection('Completed This Week',completed,'No completed work tasks logged this week.'),
-    taggedReportSection('Blocked',blocked,'No blocked work tasks this week.',blockedLine)
-  ];
-  reportText=`# Weekly Work Update\n${weekLabel()}\n\n${sections.map(s=>s.md).join('\n\n')}`;
-  $('reportBody').innerHTML=sections.map(s=>s.html).join('');
-  $('copyReportBtn').style.display='inline-block';
-  if(!aiReportEnabled)return;
-  try{
-    const payload={
-      weekLabel:weekLabel(),
-      completed:completed.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''})),
-      blocked:blocked.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''}))
-    };
-    const report=await claudeCall(`You are writing a professional weekly work update for stakeholders.
-
-Week: ${payload.weekLabel}
-Completed: ${JSON.stringify(payload.completed)}
-Blocked: ${JSON.stringify(payload.blocked)}
-
-Requirements:
-- Group the report by project tag.
-- Make the report feel meaningfully different from a raw task dump.
-- Under each project, summarize completed progress in a polished way.
-- Under blocked, explain what is stuck and why it matters when notes provide context.
-- Keep the writing concise and clear.
-- Use short stakeholder-friendly bullets, not just copied task names.
-
-Return exactly:
-###COMPLETED###
-### tag-name
-- ...
-###BLOCKED###
-### tag-name
-- ...`,1000);
-    const parseTagged=(start,end,fallback)=>{
-      const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));
-      if(!m)return {html:`<div class="report-row"><span class="report-bullet">•</span><span>${esc(fallback)}</span></div>`,md:`- ${fallback}`};
-      const raw=m[1].trim();
-      const groups=[];
-      let current=null;
-      raw.split('\n').forEach(line=>{
-        const trimmed=line.trim();
-        if(!trimmed)return;
-        if(trimmed.startsWith('###')){
-          current={tag:trimmed.replace(/^###\s*/,'').trim()||'General',lines:[]};
-          groups.push(current);
-          return;
-        }
-        if(current)current.lines.push(trimmed.replace(/^[-•*]\s*/,''));
-      });
-      if(!groups.length)return {html:`<div class="report-row"><span class="report-bullet">•</span><span>${esc(fallback)}</span></div>`,md:`- ${fallback}`};
-      return {
-        html:groups.map(g=>`<div class="weekly-group"><div class="weekly-group-header"><span class="weekly-tag-label">#${esc(g.tag)}</span><div class="weekly-progress-bar"><div class="weekly-progress-fill" style="width:100%;background:rgba(193,244,104,.55)"></div></div><span class="weekly-status-text" style="color:var(--accent)">${g.lines.length}</span></div>${fixGrammarLines(g.lines).map(l=>`<div class="report-row"><span class="report-bullet">•</span><span>${esc(l)}</span></div>`).join('')}</div>`).join(''),
-        md:groups.map(g=>`### ${g.tag}\n${fixGrammarLines(g.lines).map(l=>`- ${l}`).join('\n')}`).join('\n\n')
-      };
-    };
-    const completedParsed=parseTagged('###COMPLETED###','###BLOCKED###','No completed work tasks logged this week.');
-    const blockedParsed=parseTagged('###BLOCKED###','', 'No blocked work tasks this week.');
-    reportText=`# Weekly Work Update\n${weekLabel()}\n\n## Completed This Week\n${completedParsed.md}\n\n## Blocked\n${blockedParsed.md}`;
-    $('reportBody').innerHTML=`<div class="report-section"><div class="report-section-title">Completed This Week</div><div class="report-content">${completedParsed.html}</div></div><div class="report-section"><div class="report-section-title">Blocked</div><div class="report-content">${blockedParsed.html}</div></div>`;
-  }catch(_e){}
-}
+function toggleAI(){indicator('AI features are currently unavailable','warn')}
+async function generateDailyReport(){const tk=today(),tmk=tomorrow(),pool=reportPool();const completed=pool.filter(t=>doneDate(t)===tk).sort((a,b)=>(b.completedAt||b.archivedAt||0)-(a.completedAt||a.archivedAt||0));const blocked=tasks.filter(t=>t.category==='work'&&t.blocked).sort(cmp);const tomorrowTasks=tasks.filter(t=>t.category==='work'&&!t.done&&!t.blocked&&t.scheduledDate===tmk).sort(cmp);const sections=[reportSection('Completed Today',completed,'No work tasks completed today.'),reportSection('Blockers',blocked,'No blockers reported.',blockedLine),reportSection('Tomorrow',tomorrowTasks,'No work tasks scheduled for tomorrow.')];reportText=`# Daily Work Update\n${new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}\n\n${sections.map(s=>s.md).join('\n\n')}`;$('reportBody').innerHTML=sections.map(s=>s.html).join('');$('copyReportBtn').style.display='inline-block';if(!aiReportEnabled)return;try{const payload={completedToday:completed.map(t=>({task:t.text,notes:t.notes||''})),blockedTasks:blocked.map(t=>({task:t.text,notes:t.notes||''})),scheduledTomorrow:tomorrowTasks.map(t=>({task:t.text,notes:t.notes||'',priority:t.priority||''}))};const report=await claudeCall(`You are writing a concise but manager-ready daily work update.\n\nUse the task data below to produce a noticeably more polished report than a raw task list.\n\nCompleted today: ${JSON.stringify(payload.completedToday)}\nBlocked tasks: ${JSON.stringify(payload.blockedTasks)}\nTomorrow tasks: ${JSON.stringify(payload.scheduledTomorrow)}\n\nRequirements:\n- Keep the tone professional and specific.\n- Do not repeat the task list mechanically.\n- For completed work, summarize outcomes or progress where possible.\n- For blockers, explain the issue or impact if notes suggest one.\n- For tomorrow, frame the tasks as next steps or priorities.\n- Keep bullets concise, usually one sentence each.\n\nReturn exactly:\n###COMPLETED###\n- ...\n###BLOCKERS###\n- ...\n###TOMORROW###\n- ...`,900);const parse=(start,end,fallback)=>{const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));const lines=m?fixGrammarLines(m[1].trim().split('\n').map(l=>l.trim().replace(/^[-•*]\s*/, '')).filter(Boolean)):[fallback];return lines.length?lines:[fallback]};const aiSections=[{title:'Completed Today',lines:parse('###COMPLETED###','###BLOCKERS###','No work tasks completed today.')},{title:'Blockers',lines:parse('###BLOCKERS###','###TOMORROW###','No blockers reported.')},{title:'Tomorrow',lines:parse('###TOMORROW###','','No work tasks scheduled for tomorrow.')}];reportText=`# Daily Work Update\n${new Date().toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}\n\n${aiSections.map(s=>`## ${s.title}\n${s.lines.map(l=>`- ${l}`).join('\n')}`).join('\n\n')}`;$('reportBody').innerHTML=aiSections.map(s=>`<div class="report-section"><div class="report-section-title">${esc(s.title)}</div><div class="report-content">${s.lines.map(l=>`<div class="report-row"><span class="report-bullet">•</span><span>${esc(l)}</span></div>`).join('')}</div></div>`).join('')}catch(_e){}}
+async function generateWeeklyReport(){const {start,end}=getWeekWindow(),pool=reportPool();const completed=pool.filter(t=>inRange(doneDate(t),start,end)).sort((a,b)=>(b.completedAt||b.archivedAt||0)-(a.completedAt||a.archivedAt||0));const blocked=tasks.filter(t=>t.category==='work'&&t.blocked).sort(cmp);const sections=[taggedReportSection('Completed This Week',completed,'No completed work tasks logged this week.'),taggedReportSection('Blocked',blocked,'No blocked work tasks this week.',blockedLine)];reportText=`# Weekly Work Update\n${weekLabel()}\n\n${sections.map(s=>s.md).join('\n\n')}`;$('reportBody').innerHTML=sections.map(s=>s.html).join('');$('copyReportBtn').style.display='inline-block';if(!aiReportEnabled)return;try{const payload={weekLabel:weekLabel(),completed:completed.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''})),blocked:blocked.map(t=>({task:t.text,notes:t.notes||'',tag:t.tag||''}))};const report=await claudeCall(`You are writing a professional weekly work update for stakeholders.\n\nWeek: ${payload.weekLabel}\nCompleted: ${JSON.stringify(payload.completed)}\nBlocked: ${JSON.stringify(payload.blocked)}\n\nRequirements:\n- Group the report by project tag.\n- Make the report feel meaningfully different from a raw task dump.\n- Under each project, summarize completed progress in a polished way.\n- Under blocked, explain what is stuck and why it matters when notes provide context.\n- Keep the writing concise and clear.\n- Use short stakeholder-friendly bullets, not just copied task names.\n\nReturn exactly:\n###COMPLETED###\n### tag-name\n- ...\n###BLOCKED###\n### tag-name\n- ...`,1000);const parseTagged=(start,end,fallback)=>{const m=report.match(new RegExp(`${start}\\s*([\\s\\S]*?)${end?`(?=${end})`:''}`));if(!m)return {html:`<div class="report-row"><span class="report-bullet">•</span><span>${esc(fallback)}</span></div>`,md:`- ${fallback}`};const raw=m[1].trim();const groups=[];let current=null;raw.split('\n').forEach(line=>{const trimmed=line.trim();if(!trimmed)return;if(trimmed.startsWith('###')){current={tag:trimmed.replace(/^###\s*/,'').trim()||'General',lines:[]};groups.push(current);return}if(current)current.lines.push(trimmed.replace(/^[-•*]\s*/,''))});if(!groups.length)return {html:`<div class="report-row"><span class="report-bullet">•</span><span>${esc(fallback)}</span></div>`,md:`- ${fallback}`};return{html:groups.map(g=>`<div class="weekly-group"><div class="weekly-group-header"><span class="weekly-tag-label">#${esc(g.tag)}</span><div class="weekly-progress-bar"><div class="weekly-progress-fill" style="width:100%;background:rgba(193,244,104,.55)"></div></div><span class="weekly-status-text" style="color:var(--accent)">${g.lines.length}</span></div>${fixGrammarLines(g.lines).map(l=>`<div class="report-row"><span class="report-bullet">•</span><span>${esc(l)}</span></div>`).join('')}</div>`).join(''),md:groups.map(g=>`### ${g.tag}\n${fixGrammarLines(g.lines).map(l=>`- ${l}`).join('\n')}`).join('\n\n')}};const completedParsed=parseTagged('###COMPLETED###','###BLOCKED###','No completed work tasks logged this week.');const blockedParsed=parseTagged('###BLOCKED###','','No blocked work tasks this week.');reportText=`# Weekly Work Update\n${weekLabel()}\n\n## Completed This Week\n${completedParsed.md}\n\n## Blocked\n${blockedParsed.md}`;$('reportBody').innerHTML=`<div class="report-section"><div class="report-section-title">Completed This Week</div><div class="report-content">${completedParsed.html}</div></div><div class="report-section"><div class="report-section-title">Blocked</div><div class="report-content">${blockedParsed.html}</div></div>`}catch(_e){}}
 function runReport(){if(!user&&!tasks.length&&!archiveData.length){$('reportBody').innerHTML='<div class=\"report-generating\">Sign in to generate reports from cloud task history.</div>';return}if(reportType==='weekly')generateWeeklyReport();else generateDailyReport()}
 function copyReport(){if(!reportText)return;navigator.clipboard?.writeText(reportText).then(()=>indicator('Report copied')).catch(()=>indicator('Copy failed','error'))}
-async function polishNotes(){const btn=$('btnPolishNote');if(!btn)return;btn.disabled=true;btn.textContent='Thinking...';const taskName=$('modalTitleInput')?.value.trim()||'';const raw=$('notesArea')?.value.trim()||'';const currentTag=$('tagInput')?.value.trim()||'';const currentTask=tasks.find(t=>t.id===activeTaskId);const workTasks=tasks.filter(t=>t.category==='work'&&t.id!==activeTaskId);const existingTags=[...new Set(workTasks.map(t=>t.tag).filter(Boolean))];const relatedTasks=workTasks.filter(t=>(currentTag&&t.tag===currentTag)||(!currentTag&&t.scheduledDate===currentTask?.scheduledDate)).slice(0,5).map(t=>t.text);try{const prompt=`You are helping fill in details for a work task. Based on the context provided, do two things:\n\n1. Write clean, professional notes for this task (2-3 sentences max)\n2. Suggest the best #tag from existing tags, or propose a new short tag name\n\nTask name: "${taskName}"\n${raw?`Existing notes: "${raw}"`:'No notes yet.'}\n${relatedTasks.length?`Related tasks on same day/project: ${relatedTasks.join(', ')}`:''}\n${existingTags.length?`Existing project tags: ${existingTags.join(', ')}`:''}\n${currentTag?`Current tag: #${currentTag}`:''}\n\nRespond in this exact format:\nNOTES: [your 2-3 sentence notes here]\nTAG: [single tag word, no # symbol, use existing tag if it fits]`;const result=await claudeCall(prompt,200);const notesMatch=result.match(/NOTES:\s*(.+?)(?=TAG:|$)/si);const tagMatch=result.match(/TAG:\s*([a-zA-Z0-9_-]+)/i);if(notesMatch?.[1])$('notesArea').value=notesMatch[1].trim().replace(/```[\s\S]*?```/g,'').replace(/`/g,'').trim();if(tagMatch?.[1]&&!currentTag)$('tagInput').value=tagMatch[1].toLowerCase().replace(/\s+/g,'-')}catch(_e){if(raw)$('notesArea').value=fixGrammar(raw)}btn.disabled=false;btn.textContent='✦ Auto-fill'}
-function requestNotifPermission(){indicator('Notifications are disabled in dev','warn')}
-function toggleNotifTime(){}
-function saveNotifSettings(){}
-function initNotifications(){}
-function updateNotifUI(){}
-function loadNotifSettings(){}
-function scheduleNotifications(){}
+function polishNotes(){indicator('AI note helpers are currently unavailable','warn')}
+function defaultNotifSettings(){return{enabled:true,morningEnabled:true,morningTime:'08:00',eveningEnabled:true,eveningTime:'20:00'}}
+function notificationSupported(){return'Notification' in window&&'serviceWorker' in navigator}
+function notifPermission(){return notificationSupported()?Notification.permission:'unsupported'}
+function rowNotifSettings(r){return{enabled:r?.enabled!==false,morningEnabled:r?.morning_enabled!==false,morningTime:r?.morning_time||'08:00',eveningEnabled:r?.evening_enabled!==false,eveningTime:r?.evening_time||'20:00'}}
+function notifSettingsRow(){return{user_id:user.id,enabled:!!notifSettings.enabled,morning_enabled:!!notifSettings.morningEnabled,morning_time:notifSettings.morningTime||'08:00',evening_enabled:!!notifSettings.eveningEnabled,evening_time:notifSettings.eveningTime||'20:00'}}
+function weekdayCountForRange(start,end){return tasks.filter(t=>t.category==='work'&&!t.done&&!t.blocked&&t.scheduledDate&&t.scheduledDate>=start&&t.scheduledDate<=end).length}
+function todayNotificationData(){const tk=today(),{start,end}=getWeekWindow();const completedToday=reportPool().filter(t=>doneDate(t)===tk);const blockedToday=tasks.filter(t=>t.category==='work'&&t.blocked&&(t.scheduledDate===tk||key(t.updatedAt)===tk));const openToday=tasks.filter(t=>t.category==='work'&&!t.done&&!t.blocked&&t.scheduledDate===tk);return{todayCount:openToday.length+blockedToday.length,weekCount:weekdayCountForRange(start,end),doneCount:completedToday.length,blockedCount:blockedToday.length,pendingCount:openToday.length,activityCount:completedToday.length+blockedToday.length+openToday.length}}
+function updateNotifUI(){const row=$('notifSettingsRow'),times=$('notifTimesRow');if(!row||!times)return;const perm=notifPermission();if(!notificationSupported()){row.innerHTML='<div class="settings-hint">This browser does not support reminders.</div>';times.style.display='none';return}if(!user){row.innerHTML='<div class="settings-hint">Sign in to sync reminder preferences across devices.</div>';times.style.display='none';return}const masterOn=!!notifSettings.enabled;const permText=perm==='granted'?'Browser permission granted':perm==='denied'?'Browser permission blocked':'Browser permission not requested';const retryBtn=perm==='denied'?'<button class="btn-sm" type="button" id="notifRetryBtn">Retry Permission</button>':'';row.innerHTML=`<div class="workflow-row"><div class="toggle-switch ${masterOn?'on':''}" id="notifMasterToggle"><div class="toggle-knob"></div></div><span class="settings-hint" style="flex:1">Weekday reminders</span><span class="settings-hint">${esc(permText)}</span>${retryBtn}</div>`;$('notifMasterToggle')?.addEventListener('click',toggleNotifMaster);$('notifRetryBtn')?.addEventListener('click',requestNotifPermission);$('morningToggle')?.classList.toggle('on',masterOn&&!!notifSettings.morningEnabled);$('eveningToggle')?.classList.toggle('on',masterOn&&!!notifSettings.eveningEnabled);if($('morningTime'))$('morningTime').value=notifSettings.morningTime||'08:00';if($('eveningTime'))$('eveningTime').value=notifSettings.eveningTime||'20:00';times.style.display=masterOn?'flex':'none';if($('morningTime'))$('morningTime').disabled=!masterOn||!notifSettings.morningEnabled;if($('eveningTime'))$('eveningTime').disabled=!masterOn||!notifSettings.eveningEnabled}
+async function persistNotifSettings(){if(!user)return;const {error}=await sb().from(NOTIF_TABLE).upsert(notifSettingsRow(),{onConflict:'user_id'});if(error)throw error}
+function postToServiceWorker(message){if(navigator.serviceWorker?.controller){navigator.serviceWorker.controller.postMessage(message)}else if(swReg?.active){swReg.active.postMessage(message)}}
+function publishTaskSnapshot(){if(!notificationSupported())return;postToServiceWorker({type:'UPDATE_TASK_SNAPSHOT',data:todayNotificationData()})}
+async function requestNotifPermission(){if(!notificationSupported()){indicator('Notifications are not supported here','warn');updateNotifUI();return false}const perm=await Notification.requestPermission();updateNotifUI();if(perm==='granted'){indicator('Notifications enabled');scheduleNotifications();return true}indicator(perm==='denied'?'Notifications blocked in browser':'Notifications not enabled','warn');scheduleNotifications();return false}
+async function toggleNotifMaster(){if(!user)return;if(!notifSettings.enabled&&notifPermission()!=='granted'){const ok=await requestNotifPermission();if(!ok)return}notifSettings={...notifSettings,enabled:!notifSettings.enabled};updateNotifUI();try{await persistNotifSettings();scheduleNotifications();indicator(notifSettings.enabled?'Weekday reminders on':'Weekday reminders off')}catch(error){handleCloudError(error)}}
+async function toggleNotifTime(type){if(!user)return;const keyName=type==='evening'?'eveningEnabled':'morningEnabled';notifSettings={...notifSettings,[keyName]:!notifSettings[keyName]};updateNotifUI();try{await persistNotifSettings();scheduleNotifications()}catch(error){handleCloudError(error)}}
+async function saveNotifSettings(){if(!user)return;notifSettings={...notifSettings,morningTime:$('morningTime')?.value||'08:00',eveningTime:$('eveningTime')?.value||'20:00'};updateNotifUI();try{await persistNotifSettings();scheduleNotifications();indicator('Reminder settings saved')}catch(error){handleCloudError(error)}}
+async function loadNotifSettings(){if(!user){notifSettings=defaultNotifSettings();updateNotifUI();scheduleNotifications();return}const {data,error,status}=await sb().from(NOTIF_TABLE).select('*').eq('user_id',user.id).maybeSingle();if(error&&status!==406)throw error;if(!data){notifSettings=defaultNotifSettings();await persistNotifSettings()}else notifSettings=rowNotifSettings(data);updateNotifUI();scheduleNotifications()}
+function scheduleNotifications(){if(!notificationSupported()){return}if(!user||notifPermission()!=='granted'||!notifSettings.enabled){postToServiceWorker({type:'CANCEL_NOTIFICATIONS'});return}publishTaskSnapshot();postToServiceWorker({type:'SCHEDULE_NOTIFICATIONS',schedule:{enabled:true,morningEnabled:!!notifSettings.morningEnabled,morningTime:notifSettings.morningTime||'08:00',eveningEnabled:!!notifSettings.eveningEnabled,eveningTime:notifSettings.eveningTime||'20:00',targetUrl:HOME_PATH}})}
+function handleSwMessage(event){if(event.data?.type!=='REQUEST_TASK_DATA')return;postToServiceWorker({type:'TASK_DATA_RESPONSE',notifType:event.data.notifType,data:todayNotificationData()})}
+function initNotifications(){updateNotifUI();if(!notificationSupported()||notifBound)return;if(navigator.serviceWorker)navigator.serviceWorker.addEventListener('message',handleSwMessage);notifBound=true}
 function initATH(){const st=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone;const dismissed=localStorage.getItem('wtt_ath_dismissed');$('athBanner').style.display=!st&&!dismissed?'flex':'none'}
 function dismissATH(){$('athBanner').style.display='none';localStorage.setItem('wtt_ath_dismissed','1')}
 function sb(){if(client)return client;client=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});return client}
 function rowTask(r){return{id:String(r.id),userId:r.user_id||'',ownerEmail:r.owner_email||'',text:r.text||'',category:r.category||'work',done:!!r.done,blocked:!!r.blocked,priority:r.priority||'medium',scheduledDate:r.scheduled_date||'',notes:r.notes||'',createdAt:Number(r.created_at)||now(),completedAt:r.completed_at?Number(r.completed_at):null,updatedAt:Number(r.updated_at)||now(),tag:r.tag||'',archivedAt:r.archived_at?Number(r.archived_at):null,archivedDate:r.archived_date||'',deletedAt:r.deleted_at?Number(r.deleted_at):null}}
 function taskRow(t){return{id:t.id,user_id:t.userId||user.id,owner_email:t.ownerEmail||user.email||'',text:t.text,category:t.category,done:!!t.done,blocked:!!t.blocked,priority:t.priority,scheduled_date:t.scheduledDate||null,notes:t.notes||'',created_at:t.createdAt||now(),completed_at:t.completedAt||null,updated_at:t.updatedAt||now(),tag:t.tag||null,sort_order:null,archived_at:t.archivedAt||null,archived_date:t.archivedDate||null,deleted_at:t.deletedAt||null}}
 function cmp(a,b){if(sortMode==='priority'){const r={high:0,medium:1,low:2};const d=(r[a.priority]??9)-(r[b.priority]??9);if(d)return d}if(sortMode==='date'){const d=(a.scheduledDate||'9999-12-31').localeCompare(b.scheduledDate||'9999-12-31');if(d)return d}if(a.done!==b.done)return a.done?1:-1;if(a.blocked!==b.blocked)return a.blocked?1:-1;const d=(a.scheduledDate||'9999-12-31').localeCompare(b.scheduledDate||'9999-12-31');if(d)return d;return (b.updatedAt||0)-(a.updatedAt||0)}
-function applyRows(rows){const all=rows.map(rowTask);tasks=all.filter(t=>!t.deletedAt&&!t.archivedAt).sort(cmp);archiveData=all.filter(t=>!t.deletedAt&&t.archivedAt).sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0));render();if(archiveOpen)renderArchive();if(calOpen)renderCalendar()}
+function applyRows(rows){const all=rows.map(rowTask);tasks=all.filter(t=>!t.deletedAt&&!t.archivedAt).sort(cmp);archiveData=all.filter(t=>!t.deletedAt&&t.archivedAt).sort((a,b)=>(b.archivedAt||0)-(a.archivedAt||0));render();if(archiveOpen)renderArchive();if(calOpen)renderCalendar();publishTaskSnapshot()}
 async function fetchRows(){if(!user)return[];const {data,error}=await sb().from(TABLE).select('*').order('updated_at',{ascending:false});if(error)throw error;return data||[]}
 async function refreshFromCloud(reason='refresh'){if(!user){tasks=[];archiveData=[];render();return}const rows=await fetchRows();lastCloudError='';applyRows(rows);syncStamp();if(reason!=='realtime')indicator('Cloud synced');renderSyncSettings()}
 async function upsertRows(rows){if(!user)throw new Error('Sign in required');const {error}=await sb().from(TABLE).upsert(rows.map(taskRow),{onConflict:'id'});if(error)throw error;syncStamp()}
 function cloud(action='save changes'){if(user)return true;indicator(`Sign in to ${action}`,'warn');if(!settingsOpen)toggleSettings();return false}
-function renderSyncSettings(){const row=$('syncSettingsRow');if(!row)return;if(!user){row.innerHTML='<div class="sync-status"><div class="sync-dot"></div><span>Signed out. Cloud tasks stay read-only until you sign in.</span></div><button class="google-btn" id="syncSigninBtn" type="button">Sign in with Google</button>';$('syncSigninBtn')?.addEventListener('click',supabaseSignIn);refreshLastSyncUI();return}const err=lastCloudError?`<div class="settings-hint" style="width:100%;color:#ff8a8a">${esc(lastCloudError)}</div>`:'';row.innerHTML=`<div class="sync-status"><div class="sync-dot on"></div><span>${esc(user.email||'')}</span></div><button class="btn-sm green" id="syncRefreshBtn" type="button">Refresh</button><button class="btn-signout" id="syncSignoutBtn" type="button">Sign out</button>${err}`;$('syncRefreshBtn')?.addEventListener('click',()=>refreshFromCloud('manual').catch(handleCloudError));$('syncSignoutBtn')?.addEventListener('click',supabaseSignOut);refreshLastSyncUI()}
+function renderSyncSettings(){const row=$('syncSettingsRow');if(!row)return;if(!user){row.innerHTML='<div class="sync-status"><div class="sync-dot"></div><span>Signed out. Cloud tasks stay read-only until you sign in.</span></div><button class="google-btn" id="syncSigninBtn" type="button">Sign in with Google</button>';$('syncSigninBtn')?.addEventListener('click',supabaseSignIn);refreshLastSyncUI();return}const err=lastCloudError?`<div class="settings-hint" style="width:100%;color:#ff8a8a">${esc(lastCloudError)}</div>`:'';row.innerHTML=`<div class="sync-status"><div class="sync-dot on"></div><span>${esc(user.email||'')}</span></div><button class="btn-signout" id="syncSignoutBtn" type="button">Sign out</button><button class="icon-btn sync-refresh-btn" id="syncRefreshBtn" type="button" title="Refresh cloud data"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0 2.3 5.7"></path><path d="M20 4v7h-7"></path></svg></button>${err}`;$('syncRefreshBtn')?.addEventListener('click',async()=>{try{await refreshFromCloud('manual');await loadNotifSettings()}catch(error){handleCloudError(error)}});$('syncSignoutBtn')?.addEventListener('click',supabaseSignOut);refreshLastSyncUI()}
 function handleCloudError(error){lastCloudError=error?.message||'Cloud sync failed';refreshLastSyncUI();renderSyncSettings();indicator(lastCloudError,'error')}
 async function supabaseSignIn(){const {error}=await sb().auth.signInWithOAuth({provider:'google',options:{redirectTo:window.location.href}});if(error)handleCloudError(error)}
-async function supabaseSignOut(){if(!client)return;const {error}=await client.auth.signOut();if(error){handleCloudError(error);return}user=null;tasks=[];archiveData=[];lastCloudError='';if(channel){client.removeChannel(channel);channel=null}renderSyncSettings();render()}
+async function supabaseSignOut(){if(!client)return;const {error}=await client.auth.signOut();if(error){handleCloudError(error);return}user=null;tasks=[];archiveData=[];notifSettings=defaultNotifSettings();lastCloudError='';if(channel){client.removeChannel(channel);channel=null}scheduleNotifications();renderSyncSettings();updateNotifUI();render()}
 function schedulePeriodicSync(){clearInterval(syncTimer);syncTimer=setInterval(()=>{if(user&&document.visibilityState==='visible')refreshFromCloud('interval').catch(handleCloudError)},45000)}
 async function syncNow(){if(cloud('refresh cloud data'))await refreshFromCloud('manual').catch(handleCloudError)}
-function subRealtime(){if(!client||!user)return;if(channel)client.removeChannel(channel);channel=client.channel(`dev-${user.id}`).on('postgres_changes',{event:'*',schema:'public',table:TABLE},()=>refreshFromCloud('realtime').catch(handleCloudError)).subscribe()}
-async function initSupabaseSync(){try{const {data,error}=await sb().auth.getSession();if(error)throw error;user=data.session?.user||null;renderSyncSettings();if(user){subRealtime();await refreshFromCloud('startup')}else render();client.auth.onAuthStateChange((_e,session)=>{user=session?.user||null;lastCloudError='';renderSyncSettings();if(user){subRealtime();refreshFromCloud('auth').catch(handleCloudError)}else{tasks=[];archiveData=[];render()}})}catch(error){handleCloudError(error);render()}}
+function subRealtime(){if(!client||!user)return;if(channel)client.removeChannel(channel);channel=client.channel(`dev-${user.id}`).on('postgres_changes',{event:'*',schema:'public',table:TABLE},()=>refreshFromCloud('realtime').catch(handleCloudError)).on('postgres_changes',{event:'*',schema:'public',table:NOTIF_TABLE},()=>loadNotifSettings().catch(handleCloudError)).subscribe()}
+async function initSupabaseSync(){try{const {data,error}=await sb().auth.getSession();if(error)throw error;user=data.session?.user||null;renderSyncSettings();if(user){subRealtime();await refreshFromCloud('startup');await loadNotifSettings()}else{updateNotifUI();render()}client.auth.onAuthStateChange(async(_e,session)=>{user=session?.user||null;lastCloudError='';renderSyncSettings();if(user){subRealtime();await refreshFromCloud('auth').catch(handleCloudError);await loadNotifSettings().catch(handleCloudError)}else{tasks=[];archiveData=[];notifSettings=defaultNotifSettings();scheduleNotifications();updateNotifUI();render()}})}catch(error){handleCloudError(error);updateNotifUI();render()}}
 function visibleTasks(){return tasks.filter(t=>category==='all'||t.category===category).filter(t=>filter==='active'?!t.done&&!t.blocked:filter==='done'?t.done:filter==='blocked'?t.blocked:true).slice().sort(cmp)}
 function groupKey(t){if(!t.scheduledDate)return'unscheduled';if(t.scheduledDate<today())return'overdue';if(t.scheduledDate===today())return'today';if(t.scheduledDate===tomorrow())return'tomorrow';return'future'}
 function taskMarkup(t){const badges=[`<span class="cat-badge ${esc(t.category)}">${esc(t.category)}</span>`,`<span class="priority-badge ${esc(t.priority)}">${esc(t.priority)}</span>`];if(t.tag)badges.push(`<span class="task-tag-badge">#${esc(t.tag)}</span>`);if(t.blocked)badges.push('<span class="blocked-badge">Blocked</span>');if(t.scheduledDate)badges.push(`<span class="task-tag-badge">${esc(fmtDate(t.scheduledDate))}</span>`);return `<div class="task-item ${t.done?'done':''} ${t.blocked?'blocked':''} cat-${esc(t.category)}" data-task-id="${esc(t.id)}"><div class="task-body"><div class="task-text ${t.notes?'has-notes':t.category==='work'?'no-notes-work':''}">${esc(t.text)}</div><div class="task-meta">${badges.join('')}</div></div></div>`}
@@ -216,11 +119,10 @@ function setFilterFromSelect(v){filter=v||'all';render()}
 function setSortFromSelect(v){sortMode=v||'default';render()}
 function taskById(taskId){return tasks.find(t=>t.id===taskId)||archiveData.find(t=>t.id===taskId)||null}
 function openModal(taskId){const isNew=taskId==='__new__';const t=isNew?{id:'__new__',text:$('taskInput')?.value.trim()||'',category:newTaskCat,priority:'medium',scheduledDate:'',notes:'',tag:'',createdAt:now(),updatedAt:null,blocked:false}:taskById(taskId);if(!t)return;activeTaskId=t.id;pendingScheduleDate=t.scheduledDate||'';pendingPriority=t.priority||'medium';$('modalTitleInput').value=t.text||'';$('tagInput').value=t.tag||'';$('notesArea').value=t.notes||'';$('modalSubtitle').textContent=isNew?`${t.category==='personal'?'Personal':'Work'} task · date optional`:t.category==='personal'?'Personal task':'Work task';$('modalTimestamps').textContent=isNew?'Leave the date empty to keep this task unscheduled.':[t.createdAt?`Created ${fmtTime(t.createdAt)}`:'',t.updatedAt?`Updated ${fmtTime(t.updatedAt)}`:'',t.completedAt?`Done ${fmtTime(t.completedAt)}`:'',t.scheduledDate?`Scheduled ${fmtDate(t.scheduledDate)}`:'Unscheduled'].filter(Boolean).join(' · ');document.querySelectorAll('.priority-pill').forEach(p=>p.classList.toggle('active',p.dataset.p===pendingPriority));buildDayPicker();renderModalActions(t);$('modalOverlay')?.classList.add('open')}
-function resetModalSheetPosition(){const sheet=$('modalSheet');if(sheet)sheet.style.transform=''}
-function closeModal(){activeTaskId=null;$('modalOverlay')?.classList.remove('open');resetModalSheetPosition();closeTagDropdown()}
+function closeModal(){activeTaskId=null;$('modalOverlay')?.classList.remove('open');closeTagDropdown()}
 function renderModalActions(t){const el=$('modalActions');if(!el)return;if(t.id==='__new__'){el.innerHTML='';return}const archiveIcon='<svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M6 7l1 13h10l1-13"></path><path d="M9 7V4h6v3"></path></svg>';const blockIcon=t.blocked?'<svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2-5"></path><path d="M5 7v5h5"></path></svg>':'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M8.5 8.5l7 7"></path></svg>';const deleteIcon='<svg viewBox="0 0 24 24"><path d="M4 7h16"></path><path d="M10 11v6M14 11v6"></path><path d="M6 7l1 13h10l1-13"></path><path d="M9 7V4h6v3"></path></svg>';el.innerHTML=`<div class="modal-icon-actions"><button class="modal-icon-btn" type="button" id="modalArchiveBtn" title="Archive">${archiveIcon}</button><button class="modal-icon-btn ${t.blocked?'blocked':''}" type="button" id="modalBlockBtn" title="${t.blocked?'Unblock':'Block'}">${blockIcon}</button><button class="modal-icon-btn delete" type="button" id="modalDeleteBtn" title="Delete">${deleteIcon}</button></div>`;$('modalArchiveBtn')?.addEventListener('click',()=>modalArchiveTask(t.id));$('modalBlockBtn')?.addEventListener('click',()=>modalToggleBlocked(t.id));$('modalDeleteBtn')?.addEventListener('click',()=>modalDeleteTask(t.id))}
 function selectPriority(p){pendingPriority=p;document.querySelectorAll('.priority-pill').forEach(x=>x.classList.toggle('active',x.dataset.p===p))}
-function buildDayPicker(){const grid=$('dayPickerGrid');if(!grid)return;const opts=[];for(let i=0;i<10;i+=1){const d=new Date();d.setDate(d.getDate()+i);opts.push({key:key(d),day:d.toLocaleDateString(undefined,{weekday:'short'}),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),today:i===0})}grid.innerHTML=opts.map(o=>`<button class="day-pill ${o.key===pendingScheduleDate?'active':''} ${o.today?'today-pill':''}" type="button" data-day-key="${esc(o.key)}"><span class="pill-day">${esc(o.day)}</span><span class="pill-date">${esc(o.date)}</span></button>`).join('');grid.querySelectorAll('[data-day-key]').forEach(b=>b.addEventListener('click',()=>selectDay(b.dataset.dayKey||'')))}
+function buildDayPicker(){const grid=$('dayPickerGrid');if(!grid)return;const opts=[];for(let i=0;i<7;i+=1){const d=new Date();d.setDate(d.getDate()+i);opts.push({key:key(d),day:d.toLocaleDateString(undefined,{weekday:'short'}),date:d.toLocaleDateString(undefined,{month:'short',day:'numeric'}),today:i===0})}grid.innerHTML=opts.map(o=>`<button class="day-pill ${o.key===pendingScheduleDate?'active':''} ${o.today?'today-pill':''}" type="button" data-day-key="${esc(o.key)}"><span class="pill-day">${esc(o.day)}</span><span class="pill-date">${esc(o.date)}</span></button>`).join('');grid.querySelectorAll('[data-day-key]').forEach(b=>b.addEventListener('click',()=>selectDay(b.dataset.dayKey||'')))}
 function selectDay(v){pendingScheduleDate=v;buildDayPicker()}
 function tags(){const map=new Map();[...tasks,...archiveData].forEach(t=>{const tag=(t.tag||'').trim();if(tag)map.set(tag,(map.get(tag)||0)+1)});return[...map.entries()].sort((a,b)=>b[1]-a[1])}
 function onTagInput(v){const d=$('tagDropdown');if(!d)return;const term=(v||'').trim().toLowerCase();const list=tags().filter(([t])=>t.toLowerCase().includes(term)).slice(0,6);if(!term||!list.length){d.style.display='none';d.innerHTML='';tagHighlightIndex=-1;return}d.innerHTML=list.map(([t,c])=>`<button class="tag-option" type="button" data-tag="${esc(t)}"><span>#${esc(t)}</span><span class="tag-option-count">${c} task${c===1?'':'s'}</span></button>`).join('');d.style.display='block';tagHighlightIndex=-1;d.querySelectorAll('.tag-option').forEach(o=>o.addEventListener('click',()=>selectTagOption(o.dataset.tag||'')))}
@@ -253,10 +155,6 @@ function renderCalendar(){const grid=$('calGrid'),title=$('calTitle');if(!grid||
 function handleCalOverlayClick(e){if(e.target?.id==='calOverlay')toggleCalendar(false)}
 function handleArchiveOverlayClick(e){if(e.target?.id==='archiveOverlay')toggleArchive(false)}
 function handleOverlayClick(e){if(e.target?.id==='modalOverlay')closeModal()}
-function startModalGesture(e){if(!e.target.closest('.modal-drag,.modal-header'))return;modalGesture={startY:e.clientY,startX:e.clientX,lastY:e.clientY,active:true};$('modalSheet')?.setPointerCapture?.(e.pointerId)}
-function moveModalGesture(e){if(!modalGesture?.active)return;const dy=Math.max(0,e.clientY-modalGesture.startY);const dx=Math.abs(e.clientX-modalGesture.startX);if(dx>dy)return;const sheet=$('modalSheet');if(sheet){sheet.style.transform=`translateY(${Math.min(140,dy)}px)`}}
-function endModalGesture(e){if(!modalGesture?.active)return;const dy=Math.max(0,e.clientY-modalGesture.startY);modalGesture=null;if(dy>90){closeModal();return}resetModalSheetPosition()}
-function cancelModalGesture(){if(!modalGesture?.active)return;modalGesture=null;resetModalSheetPosition()}
 function clearGesture(){if(!gesture)return;gesture.item.style.transform='';gesture.item.classList.remove('swipe-right','swipe-left');gesture=null}
 function swipe(taskId,dx){if(dx>=72){ignoreTaskTapUntil=now()+250;toggleTask(taskId);return true}if(dx<=-72){ignoreTaskTapUntil=now()+250;askDelete(taskId);return true}return false}
 function onItemPointerDown(e){const item=e.currentTarget;gesture={item,taskId:item.dataset.taskId||'',startX:e.clientX,startY:e.clientY,dx:0,dy:0}}
@@ -271,5 +169,5 @@ window.addEventListener('storage',e=>{if(e.key===LAST_SYNC_KEY)refreshLastSyncUI
 document.addEventListener('touchstart',e=>{if(window.scrollY===0&&!ptrActive)ptrStartY=e.touches[0].clientY},{passive:true});
 document.addEventListener('touchmove',e=>{if(!ptrStartY)return;const dy=e.touches[0].clientY-ptrStartY;if(dy>80&&window.scrollY===0){ptrActive=true;$('ptrIndicator')?.classList.add('visible')}},{passive:true});
 document.addEventListener('touchend',()=>{if(!ptrActive){ptrStartY=0;return}ptrActive=false;ptrStartY=0;refreshFromCloud('pull').catch(handleCloudError).finally(()=>setTimeout(()=>$('ptrIndicator')?.classList.remove('visible'),500))});
-window.addEventListener('load',async()=>{$('proxyUrlInput').value=localStorage.getItem(PROXY_KEY)||'';$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);$('aiToggle')?.classList.toggle('on',aiReportEnabled);$('modalSheet')?.addEventListener('pointerdown',startModalGesture);$('modalSheet')?.addEventListener('pointermove',moveModalGesture);$('modalSheet')?.addEventListener('pointerup',endModalGesture);$('modalSheet')?.addEventListener('pointercancel',cancelModalGesture);initAIStatus();disableNonCoreFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{})}await initSupabaseSync()});
+window.addEventListener('load',async()=>{applyTheme();$('sortSelect').value=sortMode;$('statusSelect').value=filter;$('taskInput')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});$('archiveSearch')?.addEventListener('input',renderArchive);initAIStatus();disableAIFeatures();renderWorkflowSettings();initATH();refreshLastSyncUI();render();renderCalendar();renderSyncSettings();initNotifications();schedulePeriodicSync();if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').then(reg=>{swReg=reg;initNotifications();scheduleNotifications()}).catch(()=>{})}await initSupabaseSync();showWhatsNewIfNeeded()});
 

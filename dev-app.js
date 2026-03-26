@@ -2,7 +2,7 @@
 const SUPABASE_KEY='sb_publishable_tMGexHiobGnYwlMLo3Gjmg_yaEmEzk9';
 const TABLE='tasks';
 const NOTIF_TABLE='notification_settings';
-const BUILD='v0.8.12-dev';
+const BUILD='v0.8.13-dev';
 const DEV_HOME_PATH='/weekly-tracker/dev.html';
 const LAST_SYNC_KEY='wtt_last_synced_at';
 const AUTO_ARCHIVE_KEY='wtt_auto_archive';

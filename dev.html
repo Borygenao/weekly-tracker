@@ -649,6 +649,14 @@ body { padding:calc(18px + env(safe-area-inset-top)) 12px calc(110px + env(safe-
         </div>
         <div class="settings-hint" id="lastSyncText" style="margin-top:6px">Last synced: not yet</div>
       </div>
+      <div style="border-top:1px solid var(--border);padding-top:14px;display:none;" id="adminControlsSection">
+        <div class="settings-label">Admin Controls</div>
+        <div class="workflow-row">
+          <div class="toggle-switch" id="adminScopeToggle" onclick="toggleAdminTaskScope()"><div class="toggle-knob"></div></div>
+          <span class="settings-hint" style="flex:1">View all users' tasks</span>
+        </div>
+        <div class="settings-hint" id="adminScopeHint" style="margin-top:6px">When off, you will only see your own tasks.</div>
+      </div>
       <div style="border-top:1px solid var(--border);padding-top:14px;">
         <div class="settings-label">Workflow</div>
         <div class="workflow-row">
@@ -883,7 +891,7 @@ body { padding:calc(18px + env(safe-area-inset-top)) 12px calc(110px + env(safe-
   </div>
 </div>
 
-<div class="build-version">v0.8.13-dev</div>
+<div class="build-version">v0.8.14-dev</div>
 <script src="./dev-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>

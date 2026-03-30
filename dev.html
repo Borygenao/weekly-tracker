@@ -324,6 +324,8 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .task-item.cat-work { border-left:3px solid rgba(124,156,255,.55); }
 .task-item.cat-personal { border-left:3px solid rgba(240,122,255,.55); }
 .task-item.blocked { border-left:3px solid rgba(255,92,92,.65) !important; }
+.task-item.sync-pending { border-color:rgba(241,196,70,.34); }
+.task-item.sync-failed { border-color:rgba(255,107,107,.34); }
 
 .task-body { flex:1; display:flex; flex-direction:column; gap:4px; min-width:0; }
 .task-text { font-size:14px; line-height:1.38; word-break:break-word; }
@@ -343,6 +345,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .priority-badge.detecting { background:rgba(85,85,85,.15); color:var(--muted); }
 .task-tag-badge { font-family:'Space Mono',monospace; font-size:8px; color:var(--accent); background:rgba(200,241,53,.1); border:1px solid rgba(200,241,53,.25); padding:1px 5px; border-radius:99px; }
 .blocked-badge { font-family:'Space Mono',monospace; font-size:8px; font-weight:700; color:var(--high); background:rgba(255,92,92,.12); border:1px solid rgba(255,92,92,.25); padding:1px 5px; border-radius:99px; letter-spacing:.5px; }
+.sync-state-badge { font-family:'Space Mono',monospace; font-size:8px; padding:1px 5px; border-radius:99px; text-transform:uppercase; letter-spacing:.5px; border:1px solid rgba(124,156,255,.18); }
+.sync-state-badge.pending { color:#f1c446; border-color:rgba(241,196,70,.28); background:rgba(241,196,70,.08); }
+.sync-state-badge.failed { color:#ff9b9b; border-color:rgba(255,107,107,.28); background:rgba(255,107,107,.08); }
+[data-theme="light"] .sync-state-badge.pending { color:#8a6505; border-color:rgba(138,101,5,.22); background:rgba(138,101,5,.08); }
+[data-theme="light"] .sync-state-badge.failed { color:#9f3030; border-color:rgba(159,48,48,.22); background:rgba(159,48,48,.08); }
 .timestamps { display:flex; flex-wrap:wrap; gap:6px; }
 .timestamp { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); display:flex; align-items:center; gap:3px; }
 .timestamp .ts-label { color:var(--muted2); text-transform:uppercase; letter-spacing:1px; }
@@ -555,6 +562,11 @@ h1 { font-size:40px; font-weight:800; line-height:1; letter-spacing:-2px; text-s
 .archive-note { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted2); margin-top:10px; }
 .build-version { position:fixed; right:12px; bottom:10px; font-family:'Space Mono',monospace; font-size:10px; color:rgba(232,232,232,.34); letter-spacing:.8px; z-index:20; pointer-events:none; user-select:none; }
 .archive-notes { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted2); margin-left:4px; }
+.archive-sync-badge { display:inline-flex; align-items:center; margin-left:8px; padding:1px 6px; border-radius:999px; border:1px solid rgba(124,156,255,.16); font-family:'Space Mono',monospace; font-size:8px; letter-spacing:.4px; text-transform:uppercase; vertical-align:middle; }
+.archive-sync-badge.pending { color:#f1c446; border-color:rgba(241,196,70,.24); background:rgba(241,196,70,.08); }
+.archive-sync-badge.failed { color:#ff9b9b; border-color:rgba(255,107,107,.24); background:rgba(255,107,107,.08); }
+[data-theme="light"] .archive-sync-badge.pending { color:#8a6505; border-color:rgba(138,101,5,.22); background:rgba(138,101,5,.08); }
+[data-theme="light"] .archive-sync-badge.failed { color:#9f3030; border-color:rgba(159,48,48,.22); background:rgba(159,48,48,.08); }
 
 @keyframes fadeDown { from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)} }
 @keyframes slideIn { from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)} }
@@ -893,7 +905,7 @@ body { padding:calc(18px + env(safe-area-inset-top)) 12px calc(110px + env(safe-
   </div>
 </div>
 
-<div class="build-version">v0.8.18-dev</div>
+<div class="build-version">v0.8.19-dev</div>
 <script src="./dev-app.js"></script>
 <div style="text-align:center;padding:40px 0 20px;font-family:'Space Mono',monospace;font-size:10px;color:#333">
   <a href="/weekly-tracker/privacy.html" style="color:#555;text-decoration:none;" target="_blank">Privacy Policy</a>
